@@ -9,4 +9,10 @@ module.exports = {
     '!src/**/*.d.ts',
     '!src/index.ts',
   ],
+  transformIgnorePatterns: [
+    'node_modules/(?!(chalk|ora)/)',
+  ],
+  moduleNameMapper: {
+    '^(\\.{1,2}/.*)\\.js$': '$1',
+  },
 };
