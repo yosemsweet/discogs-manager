@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
+import ora from 'ora';
 import { DatabaseManager } from '../services/database';
 import { CollectionService } from '../services/collection';
 import { DiscogsAPIClient } from '../api/discogs';
@@ -8,9 +9,15 @@ export function createStatsCommand(discogsClient: DiscogsAPIClient, db: Database
   return new Command('stats')
     .description('Show collection statistics')
     .action(async () => {
+      const spinner = ora('Calculating statistics...').start();
+
       try {
         const collectionService = new CollectionService(discogsClient, db);
+        
+        spinner.text = 'Loading collection data...';
         const stats = await collectionService.getStats();
+
+        spinner.succeed(chalk.green('✓ Statistics calculated'));
 
         console.log(chalk.bold('\n📊 Collection Statistics:\n'));
         console.log(chalk.cyan(`Total Releases: ${stats.totalReleases}`));
@@ -27,7 +34,7 @@ export function createStatsCommand(discogsClient: DiscogsAPIClient, db: Database
         console.log();
         process.exit(0);
       } catch (error) {
-        console.error(chalk.red(`Failed to get stats: ${error}`));
+        spinner.fail(chalk.red(`✗ Failed to get stats: ${error}`));
         process.exit(1);
       }
     });

@@ -4,13 +4,15 @@ import ora from 'ora';
 import { DiscogsAPIClient } from '../api/discogs';
 import { DatabaseManager } from '../services/database';
 import { CollectionService } from '../services/collection';
+import { ProgressInfo } from '../utils/progress';
 
 export function createSyncCommand(discogsClient: DiscogsAPIClient, db: DatabaseManager) {
   return new Command('sync')
     .description('Sync your Discogs collection to the local database')
     .option('-u, --username <username>', 'Discogs username')
     .action(async (options) => {
-      const spinner = ora('Syncing collection...').start();
+      const spinner = ora().start();
+      let lastMessage = '';
 
       try {
         const collectionService = new CollectionService(discogsClient, db);
@@ -21,11 +23,27 @@ export function createSyncCommand(discogsClient: DiscogsAPIClient, db: DatabaseM
           process.exit(1);
         }
 
-        const count = await collectionService.syncCollection(username);
-        spinner.succeed(chalk.green(`Successfully synced ${count} releases`));
+        // Create progress callback that updates the spinner
+        const progressCallback = (progress: ProgressInfo) => {
+          let message = `${progress.stage}: ${progress.current}/${progress.total}`;
+          
+          if (progress.currentPage !== undefined && progress.totalPages !== undefined) {
+            message += ` (page ${progress.currentPage}/${progress.totalPages})`;
+          }
+          
+          if (progress.message) {
+            message += ` - ${progress.message}`;
+          }
+          
+          spinner.text = message;
+          lastMessage = message;
+        };
+
+        const count = await collectionService.syncCollection(username, progressCallback);
+        spinner.succeed(chalk.green(`✓ Successfully synced ${count} releases`));
         process.exit(0);
       } catch (error) {
-        spinner.fail(chalk.red(`Failed to sync: ${error}`));
+        spinner.fail(chalk.red(`✗ Failed to sync: ${error}`));
         process.exit(1);
       }
     });

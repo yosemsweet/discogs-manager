@@ -7,6 +7,7 @@ import { PlaylistService } from '../services/playlist';
 import { CollectionService } from '../services/collection';
 import { DiscogsAPIClient } from '../api/discogs';
 import { PlaylistFilter } from '../types';
+import { ProgressInfo } from '../utils/progress';
 
 export function createPlaylistCommand(
   discogsClient: DiscogsAPIClient,
@@ -22,7 +23,7 @@ export function createPlaylistCommand(
     .option('--max-year <year>', 'Maximum year')
     .option('--private', 'Create as private playlist')
     .action(async (options) => {
-      const spinner = ora('Creating playlist...').start();
+      const spinner = ora().start();
 
       try {
         if (!options.title) {
@@ -39,28 +40,53 @@ export function createPlaylistCommand(
           maxYear: options.maxYear ? parseInt(options.maxYear) : undefined,
         };
 
-        const releases = await collectionService.filterReleases(filter);
+        // Create progress callback for filtering
+        const filterProgressCallback = (progress: ProgressInfo) => {
+          let message = `${progress.stage}`;
+          if (progress.total > 0) {
+            message += `: ${progress.current}/${progress.total}`;
+          }
+          if (progress.message) {
+            message += ` - ${progress.message}`;
+          }
+          spinner.text = message;
+        };
+
+        const releases = await collectionService.filterReleases(filter, filterProgressCallback);
 
         if (releases.length === 0) {
           spinner.fail('No releases match the criteria');
           process.exit(1);
         }
 
+        // Create progress callback for playlist creation
+        const playlistProgressCallback = (progress: ProgressInfo) => {
+          let message = `${progress.stage}`;
+          if (progress.total > 0) {
+            message += `: ${progress.current}/${progress.total}`;
+          }
+          if (progress.message) {
+            message += ` - ${progress.message}`;
+          }
+          spinner.text = message;
+        };
+
         const playlist = await playlistService.createPlaylist(
           options.title,
           releases,
-          options.description
+          options.description,
+          playlistProgressCallback
         );
 
         spinner.succeed(
           chalk.green(
-            `Playlist "${options.title}" created with ${releases.length} tracks`
+            `✓ Playlist "${options.title}" created with ${releases.length} tracks`
           )
         );
         console.log(chalk.gray(`Playlist ID: ${playlist.id}`));
         process.exit(0);
       } catch (error) {
-        spinner.fail(chalk.red(`Failed to create playlist: ${error}`));
+        spinner.fail(chalk.red(`✗ Failed to create playlist: ${error}`));
         process.exit(1);
       }
     });

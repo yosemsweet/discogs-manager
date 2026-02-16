@@ -30,6 +30,15 @@ export interface PlaylistFilter {
   styles?: string[];
 }
 
+export interface ProgressInfo {
+  stage: string;
+  current: number;
+  total: number;
+  currentPage?: number;
+  totalPages?: number;
+  message?: string;
+}
+
 export interface SoundCloudPlaylist {
   id: string;
   title: string;
