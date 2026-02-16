@@ -6,6 +6,17 @@ import { PlaylistService } from '../src/services/playlist';
 
 // Mock axios
 jest.mock('axios');
+jest.mock('../src/utils/retry', () => ({
+  retryWithBackoff: jest.fn((fn) => fn()),
+  isRetryableError: jest.fn(() => false),
+  DEFAULT_RETRY_CONFIG: {
+    maxRetries: 3,
+    baseDelayMs: 1000,
+    maxDelayMs: 60000,
+    jitterFactor: 0.1,
+  },
+}));
+
 import axios from 'axios';
 
 const mockedAxios = axios as jest.Mocked<typeof axios>;
