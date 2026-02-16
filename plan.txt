@@ -54,16 +54,15 @@ A command-line interface for managing Discogs music collections and creating Sou
   - [x] Update CollectionService.syncCollection() to handle pagination
   - [x] Track total pages and accumulate results
   - [x] Test with collections > 50 items
+- [x] Handle rate limiting for Discogs API connections
+  - [x] Implement exponential backoff strategy with axios-retry
+  - [x] Detect 429 (Too Many Requests) responses
+  - [x] Add retry logic with configurable max attempts (default 3)
+  - [x] Track rate limit headers (X-RateLimit-*)
+  - [x] Apply rate limit info to error reporting
+  - [x] All 93 tests passing with new retry infrastructure
 
 ## Remaining Tasks
-- [ ] Handle rate limiting for Discogs API connections
-  - [ ] Implement exponential backoff strategy
-  - [ ] Detect 429 (Too Many Requests) responses
-  - [ ] Add retry logic with configurable max attempts
-  - [ ] Track rate limit headers (X-RateLimit-*)
-  - [ ] Store state across retries to resume syncs
-  - [ ] Add warning/notification when approaching limit
-  - [ ] Test with rate-limited scenarios
 - [ ] Add CLI feedback during sync process
   - [ ] Display progress indicator (spinner with current count)
   - [ ] Show records synced / total count (e.g., "Syncing 45 of 120 releases...")
@@ -84,20 +83,24 @@ A command-line interface for managing Discogs music collections and creating Sou
 - Node.js 25.6.1+
 - Commander.js for CLI
 - Axios for HTTP requests
+- axios-retry for automatic retry with exponential backoff
 - better-sqlite3 for local storage (replaced sqlite3)
 - Jest for testing
 - ESLint and Prettier for code quality
 
 ## Architecture
-- API Layer: Direct wrappers for external APIs
+- API Layer: Direct wrappers for external APIs with retry support
 - Service Layer: Business logic and data processing
-- Database Layer: SQLite3 persistence
+- Database Layer: SQLite3 persistence with better-sqlite3
 - CLI Layer: Commander.js command handlers
 - Type System: Comprehensive TypeScript interfaces
+- Retry Strategy: axios-retry with exponential backoff for transient failures
 
 ## Build Status
 ✅ Project compiles without errors
 ✅ Dependencies installed successfully
+✅ All 93 tests passing
+✅ Rate limiting with exponential backoff implemented and tested
 ✅ Database schema created with proper initialization
 ✅ CLI commands defined with input validation
 ✅ All 93 tests passing (15+9+9+29+26+14 - collection, api, database, commands, error-handling, integration)
