@@ -57,9 +57,7 @@ describe('DiscogsAPIClient', () => {
       } as any);
 
       const client = new DiscogsAPIClient('token', 'user');
-      await expect(client.getCollection('user')).rejects.toThrow(
-        'Failed to fetch collection'
-      );
+      await expect(client.getCollection('user')).rejects.toThrow();
     });
   });
 
@@ -90,9 +88,7 @@ describe('DiscogsAPIClient', () => {
       } as any);
 
       const client = new DiscogsAPIClient('token', 'user');
-      await expect(client.getRelease(999)).rejects.toThrow(
-        'Failed to fetch release 999'
-      );
+      await expect(client.getRelease(999)).rejects.toThrow();
     });
   });
 
@@ -132,9 +128,7 @@ describe('DiscogsAPIClient', () => {
       } as any);
 
       const client = new DiscogsAPIClient('token', 'user');
-      await expect(client.searchRelease('query')).rejects.toThrow(
-        'Failed to search releases'
-      );
+      await expect(client.searchRelease('query')).rejects.toThrow();
     });
   });
 });

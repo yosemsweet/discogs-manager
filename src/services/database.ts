@@ -4,7 +4,7 @@ import { StoredRelease } from '../types';
 
 export class DatabaseManager {
   private db: sqlite3.Database;
-  private initialized: Promise<void>;
+  public initialized: Promise<void>;
 
   constructor(dbPath: string = './data/discogs-manager.db') {
     this.db = new sqlite3.Database(dbPath, (err) => {
