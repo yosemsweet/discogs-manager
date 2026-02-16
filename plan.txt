@@ -44,6 +44,21 @@ A command-line interface for managing Discogs music collections and creating Sou
 - [x] Integration tests (14 tests covering end-to-end workflows)
 
 ## Remaining Tasks
+- [ ] Switch to better-sqlite3 for improved performance and stability
+  - [ ] Replace sqlite3 with better-sqlite3 package
+  - [ ] Refactor DatabaseManager to use better-sqlite3 synchronous API
+  - [ ] Implement proper statement preparation and cleanup
+  - [ ] Add explicit connection close handling
+  - [ ] Update all database tests for new implementation
+  - [ ] Verify NAPI crash is resolved with better-sqlite3
+  - [ ] Performance benchmarking vs sqlite3
+- [ ] Handle Discogs collections with more than 50 items
+  - [ ] Implement pagination support in DiscogsAPIClient.getCollection()
+  - [ ] Update CollectionService.syncCollection() to handle pagination
+  - [ ] Track total pages and accumulate results
+  - [ ] Add progress indicator for multi-page syncs
+  - [ ] Test with collections > 50 items
+  - [ ] Update sync command to display page progress
 - [ ] Documentation improvements (README enhancements)
 - [ ] Database migration system
 - [ ] Additional filtering options (ratings, styles)
@@ -125,3 +140,17 @@ A command-line interface for managing Discogs music collections and creating Sou
 - Merged feature/integration-tests branch to master
 - Updated plan.txt with completion status
 - Feature/error-handling branch ready for merge
+
+## Latest Session Progress (Feb 16, 2026 - Session 5)
+- Fixed SQLite3 native module NAPI crash with Node.js 25
+  - Added process.exit(0) after successful command completion
+  - Updated all CLI commands (sync, list, stats, playlist) to exit cleanly
+  - Prevents NAPI crash during database connection cleanup
+  - Removes problematic process event handlers
+- Successfully synced Discogs collection (50 releases)
+  - Verified database contains synced releases with metadata
+  - Tested list command with genre filtering
+  - Tested stats command showing collection overview
+- Identified next priority: better-sqlite3 migration for improved stability
+- Identified need: Pagination support for collections > 50 items
+- All 93 tests still passing after NAPI fix
