@@ -25,6 +25,7 @@ export function createStatsCommand(discogsClient: DiscogsAPIClient, db: Database
           console.log(chalk.gray(`  • ${g}`));
         });
         console.log();
+        process.exit(0);
       } catch (error) {
         console.error(chalk.red(`Failed to get stats: ${error}`));
         process.exit(1);

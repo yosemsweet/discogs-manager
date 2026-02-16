@@ -58,6 +58,7 @@ export function createPlaylistCommand(
           )
         );
         console.log(chalk.gray(`Playlist ID: ${playlist.id}`));
+        process.exit(0);
       } catch (error) {
         spinner.fail(chalk.red(`Failed to create playlist: ${error}`));
         process.exit(1);

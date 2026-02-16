@@ -37,6 +37,7 @@ export function createListCommand(discogsClient: DiscogsAPIClient, db: DatabaseM
           console.log(chalk.gray(`  Genres: ${r.genres}`));
           console.log();
         });
+        process.exit(0);
       } catch (error) {
         console.error(chalk.red(`Failed to list releases: ${error}`));
         process.exit(1);

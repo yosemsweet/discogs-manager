@@ -50,7 +50,5 @@ program.addCommand(
 
 program.parse(process.argv);
 
-// Handle cleanup
-process.on('exit', () => {
-  db.close();
-});
+// Note: Commands call process.exit() directly to avoid SQLite3 native module issues with Node.js 25
+// This prevents NAPI crashes during connection cleanup

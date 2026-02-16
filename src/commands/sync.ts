@@ -23,6 +23,7 @@ export function createSyncCommand(discogsClient: DiscogsAPIClient, db: DatabaseM
 
         const count = await collectionService.syncCollection(username);
         spinner.succeed(chalk.green(`Successfully synced ${count} releases`));
+        process.exit(0);
       } catch (error) {
         spinner.fail(chalk.red(`Failed to sync: ${error}`));
         process.exit(1);
