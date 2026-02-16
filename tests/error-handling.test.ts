@@ -242,7 +242,7 @@ describe('Error Handling and Edge Cases', () => {
   describe('Service Layer Edge Cases', () => {
     test('CollectionService should handle empty collection', async () => {
       const mockClient = {
-        getCollection: jest.fn().mockResolvedValue({ releases: [] }),
+        getCollectionPaginated: jest.fn().mockResolvedValue({ releases: [], pagination: { pages: 0 } }),
       } as any;
 
       const service = new CollectionService(mockClient, mockDb);
@@ -253,7 +253,7 @@ describe('Error Handling and Edge Cases', () => {
 
     test('CollectionService should handle sync with network errors', async () => {
       const mockClient = {
-        getCollection: jest.fn().mockRejectedValue(new Error('Network error')),
+        getCollectionPaginated: jest.fn().mockRejectedValue(new Error('Network error')),
       } as any;
 
       const service = new CollectionService(mockClient, mockDb);

@@ -68,16 +68,64 @@ export class DiscogsAPIClient {
     throw new DiscogsAPIClientError(undefined, error, `Unexpected error in ${context}: ${error.message}`);
   }
 
-  async getCollection(username: string = this.username) {
+  async getCollection(username: string = this.username, page: number = 1) {
     try {
       if (!username || typeof username !== 'string') {
         throw new Error('Invalid username provided');
       }
 
-      const response = await this.client.get(`/users/${username}/collection/folders/0/releases`);
+      if (!Number.isInteger(page) || page < 1) {
+        throw new Error('Invalid page number: must be a positive integer');
+      }
+
+      const response = await this.client.get(`/users/${username}/collection/folders/0/releases`, {
+        params: {
+          page,
+          per_page: 50, // Discogs API max per page
+        },
+      });
       return response.data;
     } catch (error) {
-      this.handleError(error, `getCollection(${username})`);
+      this.handleError(error, `getCollection(${username}, page ${page})`);
+    }
+  }
+
+  async getCollectionPaginated(username: string = this.username) {
+    try {
+      if (!username || typeof username !== 'string') {
+        throw new Error('Invalid username provided');
+      }
+
+      const allReleases = [];
+      let page = 1;
+      let hasMorePages = true;
+
+      while (hasMorePages) {
+        const response = await this.getCollection(username, page);
+        
+        if (response.releases && Array.isArray(response.releases)) {
+          allReleases.push(...response.releases);
+        }
+
+        // Check if there are more pages
+        if (response.pagination) {
+          hasMorePages = page < response.pagination.pages;
+          page++;
+        } else {
+          hasMorePages = false;
+        }
+      }
+
+      return {
+        releases: allReleases,
+        pagination: {
+          pages: page - 1,
+          items: allReleases.length,
+          per_page: 50,
+        },
+      };
+    } catch (error) {
+      this.handleError(error, `getCollectionPaginated(${username})`);
     }
   }
 

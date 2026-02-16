@@ -13,9 +13,10 @@ export class CollectionService {
 
   async syncCollection(username: string) {
     try {
-      const collection = await this.discogsClient.getCollection(username);
+      const collection = await this.discogsClient.getCollectionPaginated(username);
       const releases = collection.releases || [];
 
+      let processedCount = 0;
       for (const release of releases) {
         const releaseDetails = await this.discogsClient.getRelease(release.id);
         const storedRelease: StoredRelease = {
@@ -30,9 +31,10 @@ export class CollectionService {
           addedAt: new Date(),
         };
         await this.db.addRelease(storedRelease);
+        processedCount++;
       }
 
-      return releases.length;
+      return processedCount;
     } catch (error) {
       throw new Error(`Failed to sync collection: ${error}`);
     }
