@@ -2,15 +2,9 @@ import { DiscogsAPIClient } from '../src/api/discogs';
 import axios from 'axios';
 
 jest.mock('axios');
-jest.mock('../src/utils/retry', () => ({
-  retryWithBackoff: jest.fn((fn) => fn()),
-  isRetryableError: jest.fn(() => false),
-  DEFAULT_RETRY_CONFIG: {
-    maxRetries: 3,
-    baseDelayMs: 1000,
-    maxDelayMs: 60000,
-    jitterFactor: 0.1,
-  },
+jest.mock('axios-retry', () => ({
+  __esModule: true,
+  default: jest.fn((client) => client),
 }));
 
 const mockedAxios = axios as jest.Mocked<typeof axios>;

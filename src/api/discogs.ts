@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
-import { retryWithBackoff, isRetryableError, RetryConfig, DEFAULT_RETRY_CONFIG } from '../utils/retry';
+import axiosRetry from 'axios-retry';
 
 export class DiscogsAPIClientError extends Error {
   constructor(
@@ -17,17 +17,15 @@ export class DiscogsAPIClient {
   private client: AxiosInstance;
   private token: string;
   private username: string;
-  private retryConfig: RetryConfig;
   private rateLimitResetTime?: Date;
 
-  constructor(token: string, username: string, retryConfig?: Partial<RetryConfig>) {
+  constructor(token: string, username: string) {
     if (!token || !username) {
       throw new Error('Discogs API requires both token and username');
     }
 
     this.token = token;
     this.username = username;
-    this.retryConfig = { ...DEFAULT_RETRY_CONFIG, ...retryConfig };
 
     this.client = axios.create({
       baseURL: 'https://api.discogs.com',
@@ -36,6 +34,19 @@ export class DiscogsAPIClient {
         Authorization: `Discogs token=${token}`,
       },
       timeout: 30000, // 30 second timeout
+    });
+
+    // Apply axios-retry with exponential backoff
+    axiosRetry(this.client, {
+      retries: 3,
+      retryDelay: axiosRetry.exponentialDelay,
+      retryCondition: (error) => {
+        // Retry on 5xx errors and 429 (rate limit)
+        // Don't retry on 4xx errors (except 429)
+        if (!error.response) return true; // Retry network errors
+        const status = error.response.status;
+        return status === 429 || (status >= 500 && status < 600);
+      },
     });
   }
 
@@ -103,31 +114,6 @@ export class DiscogsAPIClient {
     throw new DiscogsAPIClientError(undefined, error, `Unexpected error in ${context}: ${error.message}`);
   }
 
-  private async makeRequestWithRetry<T>(
-    fn: () => Promise<T>,
-    context: string
-  ): Promise<T> {
-    return retryWithBackoff(
-      () => fn(),
-      this.retryConfig,
-      (attempt, delay, error) => {
-        // Optional: Log retry attempts
-        if (isRetryableError(error)) {
-          const waitMs = Math.round(delay);
-          if (error.statusCode === 429) {
-            console.debug(
-              `Rate limited (${context}). Retry ${attempt}/${this.retryConfig.maxRetries} in ${waitMs}ms`
-            );
-          } else {
-            console.debug(
-              `Retryable error in ${context} (${error.statusCode || error.code}). Attempt ${attempt}/${this.retryConfig.maxRetries} in ${waitMs}ms`
-            );
-          }
-        }
-      }
-    );
-  }
-
   async getCollection(username: string = this.username, page: number = 1) {
     try {
       if (!username || typeof username !== 'string') {
@@ -138,16 +124,13 @@ export class DiscogsAPIClient {
         throw new Error('Invalid page number: must be a positive integer');
       }
 
-      return await this.makeRequestWithRetry(
-        () =>
-          this.client.get(`/users/${username}/collection/folders/0/releases`, {
-            params: {
-              page,
-              per_page: 50, // Discogs API max per page
-            },
-          }).then(response => response.data),
-        `getCollection(${username}, page ${page})`
-      );
+      const response = await this.client.get(`/users/${username}/collection/folders/0/releases`, {
+        params: {
+          page,
+          per_page: 50, // Discogs API max per page
+        },
+      });
+      return response.data;
     } catch (error) {
       this.handleError(error, `getCollection(${username}, page ${page})`);
     }
@@ -198,11 +181,8 @@ export class DiscogsAPIClient {
         throw new Error('Invalid release ID: must be a positive integer');
       }
 
-      return await this.makeRequestWithRetry(
-        () =>
-          this.client.get(`/releases/${releaseId}`).then(response => response.data),
-        `getRelease(${releaseId})`
-      );
+      const response = await this.client.get(`/releases/${releaseId}`);
+      return response.data;
     } catch (error) {
       this.handleError(error, `getRelease(${releaseId})`);
     }
@@ -218,17 +198,14 @@ export class DiscogsAPIClient {
         throw new Error('Invalid limit: must be an integer between 1 and 100');
       }
 
-      return await this.makeRequestWithRetry(
-        () =>
-          this.client.get('/database/search', {
-            params: {
-              q: query,
-              type: 'release',
-              per_page: limit,
-            },
-          }).then(response => response.data),
-        `searchRelease(${query})`
-      );
+      const response = await this.client.get('/database/search', {
+        params: {
+          q: query,
+          type: 'release',
+          per_page: limit,
+        },
+      });
+      return response.data;
     } catch (error) {
       this.handleError(error, `searchRelease(${query})`);
     }
