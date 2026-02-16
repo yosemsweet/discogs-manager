@@ -58,3 +58,22 @@ export interface StoredRelease {
   rating?: number;
   addedAt: Date;
 }
+
+export interface RetryQueueRecord {
+  id?: number;
+  releaseId: number;
+  username: string;
+  attemptCount: number;
+  lastError: string;
+  lastAttemptAt: Date;
+  createdAt: Date;
+}
+
+export interface DLQRecord {
+  id?: number;
+  releaseId: number;
+  username: string;
+  errorMessage: string;
+  lastAttemptAt: Date;
+  createdAt: Date;
+}

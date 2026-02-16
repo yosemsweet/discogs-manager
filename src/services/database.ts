@@ -47,8 +47,29 @@ export class DatabaseManager {
           FOREIGN KEY (releaseId) REFERENCES releases(discogsId)
         );
 
+        CREATE TABLE IF NOT EXISTS retry_queue (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          releaseId INTEGER NOT NULL,
+          username TEXT NOT NULL,
+          attemptCount INTEGER DEFAULT 1,
+          lastError TEXT,
+          lastAttemptAt DATETIME,
+          createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS dlq (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          releaseId INTEGER NOT NULL,
+          username TEXT NOT NULL,
+          errorMessage TEXT,
+          lastAttemptAt DATETIME,
+          createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
         CREATE INDEX IF NOT EXISTS idx_releases_year ON releases(year);
         CREATE INDEX IF NOT EXISTS idx_releases_genres ON releases(genres);
+        CREATE INDEX IF NOT EXISTS idx_retry_queue_username ON retry_queue(username);
+        CREATE INDEX IF NOT EXISTS idx_dlq_username ON dlq(username);
       `);
     });
   }
@@ -132,6 +153,71 @@ export class DatabaseManager {
         WHERE pr.playlistId = ?`
       );
       return (stmt.all(playlistId) as StoredRelease[]) || [];
+    });
+  }
+
+  addToRetryQueue(releaseId: number, username: string, error: string): Promise<void> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(
+        `INSERT INTO retry_queue (releaseId, username, attemptCount, lastError, lastAttemptAt)
+         VALUES (?, ?, 1, ?, CURRENT_TIMESTAMP)`
+      );
+      stmt.run(releaseId, username, error);
+    });
+  }
+
+  incrementRetryAttempt(releaseId: number, username: string, error: string): Promise<void> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(
+        `UPDATE retry_queue 
+         SET attemptCount = attemptCount + 1, lastError = ?, lastAttemptAt = CURRENT_TIMESTAMP
+         WHERE releaseId = ? AND username = ?`
+      );
+      stmt.run(error, releaseId, username);
+    });
+  }
+
+  getRetryQueueItems(username: string): Promise<Array<{ releaseId: number; attemptCount: number }>> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(
+        `SELECT releaseId, attemptCount FROM retry_queue WHERE username = ? ORDER BY createdAt ASC`
+      );
+      return (stmt.all(username) as Array<{ releaseId: number; attemptCount: number }>) || [];
+    });
+  }
+
+  removeFromRetryQueue(releaseId: number, username: string): Promise<void> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(
+        `DELETE FROM retry_queue WHERE releaseId = ? AND username = ?`
+      );
+      stmt.run(releaseId, username);
+    });
+  }
+
+  moveToDLQ(releaseId: number, username: string, errorMessage: string): Promise<void> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(
+        `INSERT INTO dlq (releaseId, username, errorMessage, lastAttemptAt)
+         VALUES (?, ?, ?, CURRENT_TIMESTAMP)`
+      );
+      stmt.run(releaseId, username, errorMessage);
+    });
+  }
+
+  getDLQRecords(username?: string): Promise<Array<{ releaseId: number; errorMessage: string; createdAt: string }>> {
+    return Promise.resolve().then(() => {
+      if (username) {
+        const stmt = this.db.prepare(
+          `SELECT releaseId, errorMessage, createdAt FROM dlq WHERE username = ? ORDER BY createdAt DESC`
+        );
+        return (stmt.all(username) as Array<{ releaseId: number; errorMessage: string; createdAt: string }>) || [];
+      } else {
+        const stmt = this.db.prepare(
+          `SELECT releaseId, errorMessage, createdAt FROM dlq ORDER BY createdAt DESC`
+        );
+        return (stmt.all() as Array<{ releaseId: number; errorMessage: string; createdAt: string }>) || [];
+      }
     });
   }
 

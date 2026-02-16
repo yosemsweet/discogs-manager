@@ -1,5 +1,6 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import axiosRetry from 'axios-retry';
+import { Logger } from '../utils/logger';
 
 export class DiscogsAPIClientError extends Error {
   constructor(
@@ -18,6 +19,7 @@ export class DiscogsAPIClient {
   private token: string;
   private username: string;
   private rateLimitResetTime?: Date;
+  private retryCount: number = 0;
 
   constructor(token: string, username: string) {
     if (!token || !username) {
@@ -36,10 +38,10 @@ export class DiscogsAPIClient {
       timeout: 30000, // 30 second timeout
     });
 
-    // Apply axios-retry with exponential backoff
+    // Apply axios-retry with custom logic for rate limiting
     axiosRetry(this.client, {
       retries: 3,
-      retryDelay: axiosRetry.exponentialDelay,
+      retryDelay: (retryCount, error) => this.handleRetryDelay(retryCount, error),
       retryCondition: (error) => {
         // Retry on 5xx errors and 429 (rate limit)
         // Don't retry on 4xx errors (except 429)
@@ -47,7 +49,36 @@ export class DiscogsAPIClient {
         const status = error.response.status;
         return status === 429 || (status >= 500 && status < 600);
       },
+      onRetry: (retryCount, error, requestConfig) => {
+        if (error.response?.status === 429) {
+          const rateLimitInfo = this.extractRateLimitInfo(error);
+          Logger.warn(
+            `Rate limited (429)! Retry attempt ${retryCount}/3. ` +
+            `Remaining: ${rateLimitInfo.remaining ?? 'unknown'}, ` +
+            `Reset: ${rateLimitInfo.resetTime?.toISOString() ?? 'unknown'}`
+          );
+        }
+      },
     });
+  }
+
+  private handleRetryDelay(retryCount: number, error: any): number {
+    // For rate limit errors, wait until reset time
+    if (error.response?.status === 429) {
+      const rateLimitInfo = this.extractRateLimitInfo(error);
+      if (rateLimitInfo.resetTime) {
+        const now = new Date();
+        const waitTime = Math.max(0, rateLimitInfo.resetTime.getTime() - now.getTime());
+        Logger.info(
+          `Rate limit reset at ${rateLimitInfo.resetTime.toISOString()}. ` +
+          `Waiting ${Math.ceil(waitTime / 1000)} seconds before retry...`
+        );
+        return waitTime;
+      }
+    }
+
+    // For other errors, use exponential backoff
+    return axiosRetry.exponentialDelay(retryCount);
   }
 
   private extractRateLimitInfo(error: any): { resetTime?: Date; remaining?: number } {
@@ -56,15 +87,17 @@ export class DiscogsAPIClient {
 
     const result: { resetTime?: Date; remaining?: number } = {};
 
-    // Parse X-RateLimit-Reset header (Unix timestamp)
-    const resetTimestamp = headers['x-ratelimit-reset'];
+    // Parse X-Discogs-Ratelimit-Reset header (Unix timestamp)
+    // Try both variations of the header name
+    const resetTimestamp = headers['x-discogs-ratelimit-reset'] || headers['x-ratelimit-reset'];
     if (resetTimestamp) {
       result.resetTime = new Date(parseInt(resetTimestamp) * 1000);
       this.rateLimitResetTime = result.resetTime;
     }
 
-    // Parse X-RateLimit-Remaining header
-    const remaining = headers['x-ratelimit-remaining'];
+    // Parse X-Discogs-Ratelimit-Remaining header
+    // Try both variations of the header name
+    const remaining = headers['x-discogs-ratelimit-remaining'] || headers['x-ratelimit-remaining'];
     if (remaining) {
       result.remaining = parseInt(remaining);
     }
@@ -86,6 +119,15 @@ export class DiscogsAPIClient {
         case 404:
           throw new DiscogsAPIClientError(404, error, `Not found: ${context}. The requested resource does not exist.`);
         case 429:
+          // Log comprehensive rate limit information
+          const resetTimeStr = rateLimitInfo.resetTime?.toISOString() ?? 'unknown';
+          const remainingStr = rateLimitInfo.remaining?.toString() ?? 'unknown';
+          Logger.error(
+            `Rate limit exceeded for: ${context}\n` +
+            `  Reset Time: ${resetTimeStr}\n` +
+            `  Requests Remaining: ${remainingStr}\n` +
+            `  All Headers: ${JSON.stringify(axiosError.response?.headers, null, 2)}`
+          );
           throw new DiscogsAPIClientError(
             429,
             error,

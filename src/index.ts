@@ -10,6 +10,7 @@ import { createSyncCommand } from './commands/sync';
 import { createListCommand } from './commands/list';
 import { createStatsCommand } from './commands/stats';
 import { createPlaylistCommand } from './commands/playlist';
+import { registerRetryCommand } from './commands/retry';
 
 dotenv.config();
 
@@ -47,6 +48,7 @@ program.addCommand(createStatsCommand(discogsClient, db));
 program.addCommand(
   createPlaylistCommand(discogsClient, soundcloudClient, db)
 );
+registerRetryCommand(program);
 
 program.parse(process.argv);
 

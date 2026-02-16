@@ -1,7 +1,8 @@
-import { DiscogsAPIClient } from '../api/discogs';
+import { DiscogsAPIClient, DiscogsAPIClientError } from '../api/discogs';
 import { DatabaseManager } from './database';
 import { DiscogsRelease, PlaylistFilter, StoredRelease } from '../types';
 import { ProgressCallback, noopProgress } from '../utils/progress';
+import { Logger } from '../utils/logger';
 
 export class CollectionService {
   private discogsClient: DiscogsAPIClient;
@@ -22,6 +23,7 @@ export class CollectionService {
       const totalPages = collection.pagination?.pages || 1;
 
       let processedCount = 0;
+      let failedCount = 0;
       let currentPage = 1;
       
       for (const release of releases) {
@@ -38,32 +40,111 @@ export class CollectionService {
           message: `Fetching details for ${release.basic_information?.title || 'unknown'}`,
         });
 
-        const releaseDetails = await this.discogsClient.getRelease(release.id);
-        const storedRelease: StoredRelease = {
-          discogsId: releaseDetails.id,
-          title: releaseDetails.title,
-          artists: releaseDetails.artists
-            .map((a: any) => a.name)
-            .join(', '),
-          year: releaseDetails.year,
-          genres: releaseDetails.genres.join(', '),
-          styles: releaseDetails.styles.join(', '),
-          addedAt: new Date(),
-        };
-        await this.db.addRelease(storedRelease);
-        processedCount++;
+        try {
+          const releaseDetails = await this.discogsClient.getRelease(release.id);
+          const storedRelease: StoredRelease = {
+            discogsId: releaseDetails.id,
+            title: releaseDetails.title,
+            artists: releaseDetails.artists
+              .map((a: any) => a.name)
+              .join(', '),
+            year: releaseDetails.year,
+            genres: releaseDetails.genres.join(', '),
+            styles: releaseDetails.styles.join(', '),
+            addedAt: new Date(),
+          };
+          await this.db.addRelease(storedRelease);
+          processedCount++;
+        } catch (error) {
+          failedCount++;
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          Logger.warn(`Failed to fetch release ${release.id}: ${errorMsg}`);
+
+          // Check if it's a 404 (not found) - don't retry permanently missing items
+          if (error instanceof DiscogsAPIClientError && error.statusCode === 404) {
+            await this.db.moveToDLQ(release.id, username, `404 Not Found: ${errorMsg}`);
+            Logger.info(`Moved release ${release.id} to DLQ (404)`);
+          } else {
+            // For other errors, add to retry queue
+            await this.db.addToRetryQueue(release.id, username, errorMsg);
+            Logger.info(`Queued release ${release.id} for retry`);
+          }
+        }
       }
 
       onProgress({
         stage: 'Completed',
         current: totalReleases,
         total: totalReleases,
-        message: 'All releases synced successfully',
+        message: `Synced ${processedCount}/${totalReleases} releases. ${failedCount} failures queued for retry.`,
       });
 
-      return processedCount;
+      return { successCount: processedCount, failureCount: failedCount };
     } catch (error) {
       throw new Error(`Failed to sync collection: ${error}`);
+    }
+  }
+
+  async processRetryQueue(username: string, onProgress: ProgressCallback = noopProgress) {
+    try {
+      const retryItems = await this.db.getRetryQueueItems(username);
+      if (retryItems.length === 0) {
+        onProgress({ stage: 'Retry queue empty', current: 0, total: 0 });
+        return { successCount: 0, failureCount: 0 };
+      }
+
+      let successCount = 0;
+      let failureCount = 0;
+
+      for (let i = 0; i < retryItems.length; i++) {
+        const item = retryItems[i];
+
+        onProgress({
+          stage: 'Processing retry queue',
+          current: i + 1,
+          total: retryItems.length,
+          message: `Retrying release ${item.releaseId} (attempt ${item.attemptCount})`,
+        });
+
+        try {
+          const releaseDetails = await this.discogsClient.getRelease(item.releaseId);
+          const storedRelease: StoredRelease = {
+            discogsId: releaseDetails.id,
+            title: releaseDetails.title,
+            artists: releaseDetails.artists
+              .map((a: any) => a.name)
+              .join(', '),
+            year: releaseDetails.year,
+            genres: releaseDetails.genres.join(', '),
+            styles: releaseDetails.styles.join(', '),
+            addedAt: new Date(),
+          };
+          await this.db.addRelease(storedRelease);
+          await this.db.removeFromRetryQueue(item.releaseId, username);
+          successCount++;
+          Logger.info(`Successfully retried release ${item.releaseId}`);
+        } catch (error) {
+          failureCount++;
+          const errorMsg = error instanceof Error ? error.message : String(error);
+
+          // If 404 or max retries (3), move to DLQ
+          if (
+            (error instanceof DiscogsAPIClientError && error.statusCode === 404) ||
+            item.attemptCount >= 3
+          ) {
+            await this.db.moveToDLQ(item.releaseId, username, errorMsg);
+            await this.db.removeFromRetryQueue(item.releaseId, username);
+            Logger.warn(`Moved release ${item.releaseId} to DLQ after ${item.attemptCount} retries`);
+          } else {
+            await this.db.incrementRetryAttempt(item.releaseId, username, errorMsg);
+            Logger.warn(`Retry attempt ${item.attemptCount + 1} scheduled for release ${item.releaseId}`);
+          }
+        }
+      }
+
+      return { successCount, failureCount };
+    } catch (error) {
+      throw new Error(`Failed to process retry queue: ${error}`);
     }
   }
 

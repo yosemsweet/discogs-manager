@@ -253,7 +253,8 @@ describe('Error Handling and Edge Cases', () => {
       const service = new CollectionService(mockClient, mockDb);
       const result = await service.syncCollection('test-user');
 
-      expect(result).toBe(0);
+      expect(result.successCount).toBe(0);
+      expect(result.failureCount).toBe(0);
     });
 
     test('CollectionService should handle sync with network errors', async () => {
