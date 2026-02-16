@@ -30,14 +30,17 @@ A command-line interface for managing Discogs music collections and creating Sou
 - [x] Feature branch created (feature/test-suite)
 - [x] Test suite implementation (tests/)
   - [x] CollectionService tests (15 tests passing)
-  - [x] API client tests (all tests passing)
+  - [x] API client tests (9 tests passing)
   - [x] DatabaseManager tests (9 tests passing)
+  - [x] Command handler tests (29 tests passing)
 - [x] Database initialization fix (db.serialize() for synchronous table creation)
 - [x] Test timestamp handling (proper Date to ISO string conversion)
-- [x] All 24 tests passing with 10s timeout
+- [x] All 53 tests passing with 10s timeout
+- [x] Jest configuration updated for ES module support
+- [x] feature/test-suite merged to master
+- [x] feature/command-tests ready for merge
 
 ## Remaining Tasks
-- [ ] Command handler tests (sync, list, stats, playlist commands)
 - [ ] Integration tests
 - [ ] Error handling and edge case management
 - [ ] API error handling improvements
@@ -47,7 +50,6 @@ A command-line interface for managing Discogs music collections and creating Sou
 - [ ] Documentation improvements
 - [ ] Performance optimization
 - [ ] CI/CD pipeline setup
-- [ ] Merge feature/test-suite to main
 
 ## Key Technologies
 - TypeScript 4.9.5+
@@ -70,15 +72,18 @@ A command-line interface for managing Discogs music collections and creating Sou
 ✅ Dependencies installed successfully
 ✅ Database schema created
 ✅ CLI commands defined
-✅ All 24 tests passing (collection, api, database)
+✅ All 53 tests passing (collection, api, database, commands)
 ✅ Database initialization working reliably
-✅ Ready for command tests and feature branch merge
+✅ Jest ES module handling configured
+✅ Ready for merge and deployment
 
-## Latest Session Progress (Feb 16, 2026)
-- Fixed database initialization with db.serialize() for synchronous table creation
-- Converted DatabaseManager to return initialization Promise
-- Fixed timestamp handling: Date objects properly converted to ISO strings
-- All database tests now passing reliably (9 tests)
-- Collection and API tests verified passing (15 tests total)
-- Committed to feature/test-suite branch with all fixes
-- Test suite now ready for next phase: command handler tests
+## Latest Session Progress (Feb 16, 2026 - Session 2)
+- Created comprehensive command handler tests (29 tests)
+  - sync command: username option and configuration
+  - list command: genre, year, and limit filtering
+  - stats command: statistics calculation
+  - playlist command: filter and creation logic
+- Configured Jest to handle chalk and ora ES modules
+- Updated jest.config.js with transformIgnorePatterns
+- All 53 total tests passing (15+9+9+29)
+- Committed feature/command-tests branch ready for merge
