@@ -56,6 +56,22 @@ A command-line interface for managing Discogs music collections and creating Sou
   - [x] Test with collections > 50 items
 
 ## Remaining Tasks
+- [ ] Handle rate limiting for Discogs API connections
+  - [ ] Implement exponential backoff strategy
+  - [ ] Detect 429 (Too Many Requests) responses
+  - [ ] Add retry logic with configurable max attempts
+  - [ ] Track rate limit headers (X-RateLimit-*)
+  - [ ] Store state across retries to resume syncs
+  - [ ] Add warning/notification when approaching limit
+  - [ ] Test with rate-limited scenarios
+- [ ] Add CLI feedback during sync process
+  - [ ] Display progress indicator (spinner with current count)
+  - [ ] Show records synced / total count (e.g., "Syncing 45 of 120 releases...")
+  - [ ] Update in real-time as releases are processed
+  - [ ] Display pagination progress (e.g., "Page 2 of 3")
+  - [ ] Show estimated time remaining
+  - [ ] Add final summary with statistics
+  - [ ] Test with large collections
 - [ ] Documentation improvements (README enhancements)
 - [ ] Database migration system
 - [ ] Additional filtering options (ratings, styles)
