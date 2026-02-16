@@ -63,14 +63,16 @@ A command-line interface for managing Discogs music collections and creating Sou
   - [x] All 93 tests passing with new retry infrastructure
 
 ## Remaining Tasks
-- [ ] Add CLI feedback during sync process
-  - [ ] Display progress indicator (spinner with current count)
-  - [ ] Show records synced / total count (e.g., "Syncing 45 of 120 releases...")
-  - [ ] Update in real-time as releases are processed
-  - [ ] Display pagination progress (e.g., "Page 2 of 3")
-  - [ ] Show estimated time remaining
-  - [ ] Add final summary with statistics
-  - [ ] Test with large collections
+- [ ] Add CLI progress feedback for all commands
+  - [ ] Create progress tracking utility for long-running operations
+  - [ ] sync command: Show releases synced / total (X of Y), pagination progress
+  - [ ] list command: Show filtering progress if large collection
+  - [ ] stats command: Show calculation progress for statistics
+  - [ ] playlist command: Show playlist creation progress and track addition
+  - [ ] Display pagination info (e.g., "Page 2 of 3")
+  - [ ] Show real-time progress updates with spinner
+  - [ ] Add final summary with operation statistics
+  - [ ] Test with large collections (100+ items)
 - [ ] Documentation improvements (README enhancements)
 - [ ] Database migration system
 - [ ] Additional filtering options (ratings, styles)
@@ -87,12 +89,14 @@ A command-line interface for managing Discogs music collections and creating Sou
 - better-sqlite3 for local storage (replaced sqlite3)
 - Jest for testing
 - ESLint and Prettier for code quality
+- ora for progress spinners
 
 ## Architecture
 - API Layer: Direct wrappers for external APIs with retry support
-- Service Layer: Business logic and data processing
+- Service Layer: Business logic and data processing with progress callbacks
 - Database Layer: SQLite3 persistence with better-sqlite3
-- CLI Layer: Commander.js command handlers
+- CLI Layer: Commander.js command handlers with progress tracking
+- Progress System: Callback-based progress reporting across all commands
 - Type System: Comprehensive TypeScript interfaces
 - Retry Strategy: axios-retry with exponential backoff for transient failures
 
