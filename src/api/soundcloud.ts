@@ -11,6 +11,22 @@ export class SoundCloudAPIClientError extends Error {
   }
 }
 
+export class SoundCloudRateLimitError extends SoundCloudAPIClientError {
+  constructor(
+    public remainingRequests: number,
+    public resetTime: string,
+    public maxRequests: number = 15000,
+    message?: string
+  ) {
+    super(
+      429,
+      undefined,
+      message || `Rate limit exceeded. ${remainingRequests} requests remaining. Reset at ${resetTime}`
+    );
+    this.name = 'SoundCloudRateLimitError';
+  }
+}
+
 export class SoundCloudAPIClient {
   private client: AxiosInstance;
   private clientId: string;
@@ -49,7 +65,14 @@ export class SoundCloudAPIClient {
         case 404:
           throw new SoundCloudAPIClientError(404, error, `Not found in ${context}: The requested resource does not exist`);
         case 429:
-          throw new SoundCloudAPIClientError(429, error, `Rate limit exceeded in ${context}: Please try again later`);
+          // Parse rate limit information from response
+          const rateLimitInfo = this.parseRateLimitResponse(data);
+          throw new SoundCloudRateLimitError(
+            rateLimitInfo.remainingRequests,
+            rateLimitInfo.resetTime,
+            rateLimitInfo.maxRequests,
+            `Rate limit exceeded in ${context}: ${rateLimitInfo.remainingRequests} requests remaining. Reset at ${rateLimitInfo.resetTime}`
+          );
         case 500:
         case 502:
         case 503:
@@ -68,6 +91,51 @@ export class SoundCloudAPIClient {
     }
 
     throw new SoundCloudAPIClientError(undefined, error, `Unexpected error in ${context}: ${error.message}`);
+  }
+
+  /**
+   * Parse rate limit information from 429 error response
+   * Expected format:
+   * {
+   *   "errors": [{
+   *     "meta": {
+   *       "rate_limit": {
+   *         "group": "plays",
+   *         "max_nr_of_requests": 15000,
+   *         "time_window": "PT24H"
+   *       },
+   *       "remaining_requests": 0,
+   *       "reset_time": "2015/06/01 09:49:40 +0000"
+   *     }
+   *   }]
+   * }
+   */
+  private parseRateLimitResponse(data: any): {
+    remainingRequests: number;
+    resetTime: string;
+    maxRequests: number;
+  } {
+    try {
+      const errors = data?.errors || [];
+      if (errors.length > 0) {
+        const meta = errors[0]?.meta;
+        if (meta) {
+          return {
+            remainingRequests: meta.remaining_requests || 0,
+            resetTime: meta.reset_time || 'unknown',
+            maxRequests: meta.rate_limit?.max_nr_of_requests || 15000,
+          };
+        }
+      }
+    } catch (e) {
+      // Fall back to defaults if parsing fails
+    }
+
+    return {
+      remainingRequests: 0,
+      resetTime: 'unknown',
+      maxRequests: 15000,
+    };
   }
 
   async createPlaylist(title: string, description: string = '', isPrivate: boolean = false) {
