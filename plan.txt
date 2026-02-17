@@ -28,4 +28,65 @@ A command-line interface for managing Discogs music collections and creating Sou
 - **Session 9**: Merged feature/make-retries-work to master
 - **Session 10**: Implemented list command comprehensive filtering (genres, styles, year range, rating range), updated documentation
 
+## Current Session (Session 11) - In Progress: Enhance Stats Command
+
+### Goal
+Update stats command to show releases per genre (fixing README/implementation mismatch) and add optional verbose mode for style breakdown.
+
+### Steps to Implement
+1. **Update CollectionService.getStats() return type**
+   - Change from returning `genres: string[]` to `genreStats: Map<string, number>` (genre name → release count)
+   - Add `styleStats?: Map<string, number>` for verbose mode
+   - Current: returns only unique genre names (array)
+   - Target: returns genre names with count of releases containing that genre
+
+2. **Implement getGenreStats() method in CollectionService**
+   - Iterate through all releases and count occurrences of each genre
+   - Handle comma-separated genres in each release (split and count each)
+   - Return sorted map by count descending
+   - Reuse for both stats and optional verbose stats
+
+3. **Implement getStyleStats() method in CollectionService** (for verbose mode)
+   - Similar to getGenreStats but for styles field
+   - Only called when verbose flag is set
+   - Return sorted map by count descending
+
+4. **Update stats command to accept --verbose flag**
+   - Add `.option('-v, --verbose', 'Show detailed stats including style breakdown')`
+   - Pass verbose flag to collectionService.getStats(verbose)
+
+5. **Update CollectionService.getStats(verbose?) signature**
+   - Accept optional verbose boolean parameter
+   - Call getStyleStats() only when verbose is true
+   - More efficient than always calculating styles
+
+6. **Update stats command output formatting**
+   - Show "Top Genres:" with counts (e.g., "Rock: 15 releases")
+   - Display top 10 genres sorted by release count (descending)
+   - When verbose: add "Top Styles:" section below genres with same format
+   - Format: `  • Genre Name: N releases`
+
+7. **Update README stats section**
+   - Fix example output to match new format with release counts
+   - Add verbose example: `npm run dev -- stats yosemsweet --verbose`
+   - Update output section to show genre counts
+
+8. **Add tests for new stats functionality**
+   - Test getGenreStats() returns correct genre counts
+   - Test getStyleStats() returns correct style counts
+   - Test stats command output includes genre counts
+   - Test verbose flag triggers style stats calculation
+   - Test sorting by count (descending)
+   - Update existing stats tests (currently 3 tests checking old behavior)
+
+9. **Verify all tests pass**
+   - Run full test suite: `npm test`
+   - Ensure 93+ tests passing (adding ~5-6 new tests)
+   - Check no regressions in existing functionality
+
+10. **Commit changes**
+    - Branch: `feature/stats-command-enhancement`
+    - Message: "feat: enhance stats command with genre/style breakdown by count"
+    - Include: CollectionService, stats command, tests, README
+
 ## Completed Features Summary
