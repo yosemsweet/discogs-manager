@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
 import { SoundCloudAPIClient } from '../api/soundcloud';
+import { SoundCloudRateLimitService } from '../services/soundcloud-rate-limit';
 import { DatabaseManager } from '../services/database';
 import { PlaylistService } from '../services/playlist';
 import { CollectionService } from '../services/collection';
@@ -31,8 +32,11 @@ export function createPlaylistCommand(
           process.exit(1);
         }
 
+        spinner.text = 'Checking SoundCloud rate limits...';
+        const rateLimitService = new SoundCloudRateLimitService();
+
         const collectionService = new CollectionService(discogsClient, db);
-        const playlistService = new PlaylistService(soundcloudClient, db);
+        const playlistService = new PlaylistService(soundcloudClient, db, rateLimitService);
 
         const filter: PlaylistFilter = {
           genres: options.genres ? options.genres.split(',').map((g: string) => g.trim()) : undefined,
@@ -86,7 +90,18 @@ export function createPlaylistCommand(
         console.log(chalk.gray(`Playlist ID: ${playlist.id}`));
         process.exit(0);
       } catch (error) {
-        spinner.fail(chalk.red(`✗ Failed to create playlist: ${error}`));
+        // Check for rate limit errors
+        if (error instanceof Error && error.message.includes('rate limit')) {
+          spinner.fail(
+            chalk.red(
+              `✗ SoundCloud rate limit exceeded.\n` +
+              `   ${error.message}\n` +
+              `   Please try again later.`
+            )
+          );
+        } else {
+          spinner.fail(chalk.red(`✗ Failed to create playlist: ${error}`));
+        }
         process.exit(1);
       }
     });

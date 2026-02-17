@@ -1,4 +1,5 @@
 import { SoundCloudAPIClient } from '../api/soundcloud';
+import { SoundCloudRateLimitService } from './soundcloud-rate-limit';
 import { DatabaseManager } from './database';
 import { StoredRelease } from '../types';
 import { ProgressCallback, noopProgress } from '../utils/progress';
@@ -6,14 +7,29 @@ import { ProgressCallback, noopProgress } from '../utils/progress';
 export class PlaylistService {
   private soundcloudClient: SoundCloudAPIClient;
   private db: DatabaseManager;
+  private rateLimitService: SoundCloudRateLimitService | null;
 
-  constructor(soundcloudClient: SoundCloudAPIClient, db: DatabaseManager) {
+  constructor(
+    soundcloudClient: SoundCloudAPIClient,
+    db: DatabaseManager,
+    rateLimitService?: SoundCloudRateLimitService
+  ) {
     this.soundcloudClient = soundcloudClient;
     this.db = db;
+    this.rateLimitService = rateLimitService || null;
   }
 
   async createPlaylist(title: string, releases: StoredRelease[], description?: string, onProgress: ProgressCallback = noopProgress) {
     try {
+      // Check rate limit before starting
+      if (this.rateLimitService && this.rateLimitService.isLimitExceeded()) {
+        throw new Error(
+          `SoundCloud rate limit exceeded. ` +
+          `Reset time: ${this.rateLimitService.getFormattedResetTime()}. ` +
+          `Try again later.`
+        );
+      }
+
       onProgress({ stage: 'Creating playlist', current: 0, total: releases.length, message: title });
       const playlist = await this.soundcloudClient.createPlaylist(title, description);
 
@@ -22,6 +38,11 @@ export class PlaylistService {
 
       let addedCount = 0;
       for (const release of releases) {
+        // Throttle if approaching rate limit
+        if (this.rateLimitService) {
+          await this.soundcloudClient.throttleIfApproachingLimit(this.rateLimitService);
+        }
+
         onProgress({ 
           stage: 'Adding tracks to playlist', 
           current: addedCount + 1, 

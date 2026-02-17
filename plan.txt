@@ -29,7 +29,7 @@ A command-line interface for managing Discogs music collections and creating Sou
 - **Session 10**: Implemented list command comprehensive filtering (genres, styles, year range, rating range), updated documentation
 - **Session 11**: Enhanced stats command with genre/style breakdown by count, added --verbose flag
 
-## Current Session (Session 12) - In Progress: Handle SoundCloud Rate Limits
+## Current Session (Session 13) - In Progress: Handle SoundCloud Rate Limits
 
 ### Goal
 Implement SoundCloud API rate limit handling to prevent 429 errors and enable graceful throttling for playlist creation operations.
@@ -45,142 +45,94 @@ Implement SoundCloud API rate limit handling to prevent 429 errors and enable gr
   - `remaining_requests`: Number of requests left
   - `reset_time`: When limit resets (format: `yyyy/MM/dd HH:mm:ss Z`)
 
-### Steps to Implement
-1. **Create SoundCloud rate limit tracking service**
-   - New file: `src/services/soundcloud-rate-limit.ts`
-   - Track rate limit state: `remaining`, `reset_time`, `max_requests`
-   - Methods: `updateFromResponse()`, `isApproachingLimit()`, `getTimeUntilReset()`
-   - Store state to database for persistence across CLI runs
-   - Add database table: `soundcloud_rate_limit` (username, remaining, reset_time, max_requests, last_updated)
+### Progress Summary (Session 13)
 
-2. **Update SoundCloudAPIClient with rate limit handling**
-   - Parse HTTP 429 response and extract rate limit metadata from JSON error body
-   - Create custom error: `SoundCloudRateLimitError` extending existing error class
-   - Extract `reset_time`, `remaining_requests` from response body
-   - Log rate limit info with: remaining requests, reset time, time until reset
-   - Create `createPlaylistWithTracks()` method that:
-     - Pre-checks if approaching limit before attempting creation
-     - Validates sufficient requests remain before proceeding
-     - Returns error with reset_time if limit exceeded
+**Completed Steps:**
+✅ **Step 1: Create SoundCloud rate limit tracking service**
+   - Created: `src/services/soundcloud-rate-limit.ts` (142 lines)
+   - SoundCloudRateLimitService class with full state management
+   - Methods: updateFromResponse(), isApproachingLimit(), isLimitExceeded(), getTimeUntilReset()
+   - Additional utilities: parseResetTime(), getFormattedResetTime(), getTimeUntilResetHuman(), isStateStale(), reset()
+   - Handles "yyyy/MM/dd HH:mm:ss Z" format parsing
+   - Threshold for warning: ≤5 requests remaining
+   - 20 comprehensive unit tests created and passing
 
-3. **Implement throttling strategy in SoundCloudAPIClient**
-   - Add method `throttleIfApproachingLimit()` similar to Discogs implementation
-   - If `remaining_requests ≤ 5`: warn and pause until reset_time
-   - Display: "SoundCloud rate limit nearly exhausted. Pausing until reset..."
-   - Calculate wait time from response reset_time
-   - Resume automatically when reset_time passes
-   - Log resume message with full request allowance restored
+✅ **Step 2: Update SoundCloudAPIClient with rate limit handling**
+   - Added SoundCloudRateLimitError class extending SoundCloudAPIClientError
+   - Fields: remainingRequests, resetTime, maxRequests
+   - Updated handleError() to parse HTTP 429 responses
+   - Added parseRateLimitResponse() helper method
+   - Extracts metadata from nested errors[0].meta in JSON response
+   - Safe fallbacks for invalid/missing data
 
+✅ **Step 3: Implement throttling strategy in SoundCloudAPIClient**
+   - Added throttleIfApproachingLimit() async method
+   - Checks for exceeded limit (throws error if remaining ≤ 0)
+   - On approaching limit (≤5): pauses execution until reset_time
+   - Logs warning with human-readable wait time
+   - Resets service state after waiting
+   - Resumes with info log when ready
+
+**Test Status:**
+- Base tests: 97 passing (unchanged)
+- Rate limit tests: 20 new tests for soundcloud-rate-limit.ts
+- **Total: 117 tests passing** (100% pass rate)
+- TypeScript: Clean compilation, no errors
+
+**Current Branch:** feature/soundcloud-rate-limiting
+
+**Committed:**
+- "feat: add SoundCloud rate limit tracking and error handling"
+
+### Next Steps to Complete
 4. **Update PlaylistService with rate limit awareness**
-   - Fetch current rate limit state before creating playlist
-   - Check if sufficient requests remain (need N requests for tracks to add)
-   - Inform user if approaching/exceeding limit: show reset_time
-   - Suggest alternative: "Try again after [reset_time]"
-   - Add optional `--force` flag to skip limit check (not recommended)
+   - Inject SoundCloudRateLimitService into PlaylistService
+   - Pre-check rate limit before creating playlist
+   - Throw descriptive error if limit exceeded
+   - Update createPlaylistFromFiltered() signature
 
 5. **Update playlist command with better feedback**
-   - Add progress tracking for playlist creation
-   - Display message before rate limit check: "Checking SoundCloud rate limits..."
-   - On rate limit error: show reset_time and explain why creation failed
-   - Offer suggestion: "Your rate limit will reset at [reset_time]. Try again then."
-   - Log rate limit state before and after operation
+   - Add progress message: "Checking SoundCloud rate limits..."
+   - Display reset_time on rate limit error
+   - Offer: "Try again after [reset_time]"
 
-6. **Update SoundCloudAPIClient to store rate limit in database**
-   - After each SoundCloud API call, update rate limit table
-   - Store: `remaining_requests`, `reset_time`, `max_requests`, `timestamp`
-   - Query on startup to restore previous rate limit state
-   - Help avoid repeated 429 errors across CLI invocations
+6. **Store rate limit state in database**
+   - Create soundcloud_rate_limit table if needed
+   - Persist rate limit state after each API call
+   - Restore state on startup
 
-7. **Add tests for SoundCloud rate limit handling**
-   - Test parsing 429 response with rate limit metadata
-   - Test rate limit service: tracking remaining, checking limit, calculating reset time
-   - Test throttling logic: pause when approaching limit
-   - Test edge cases: zero remaining, past reset_time, invalid reset_time format
+7. **Add comprehensive rate limit tests**
+   - Test SoundCloudRateLimitError handling
+   - Test edge cases: zero remaining, past reset_time
    - Test playlist creation with rate limit check
-   - Mock SoundCloud responses with various rate limit scenarios
+   - Add to error-handling.test.ts
 
-8. **Update error handling tests**
-   - Add test for `SoundCloudRateLimitError` 
-   - Test error message formatting with reset_time
-   - Test timeout/retry behavior doesn't apply to 429 (it's not retryable)
-
-9. **Update README documentation**
-   - Add "SoundCloud Rate Limiting" section to error handling
+8. **Update README documentation**
+   - Add "SoundCloud Rate Limiting" section
    - Explain 15,000 plays per 24 hours
-   - Show example: "Rate limit nearly exhausted. Pausing until [time]..."
-   - Explain automatic throttling prevents manual waiting
-   - Note: playlist creation each track counts as ~1 request
+   - Show automatic throttling behavior
 
-10. **Verify all tests pass**
-    - Run full test suite: `npm test`
-    - Ensure existing 97 tests still pass
-    - Verify 6-8 new tests for rate limiting pass
-    - No regressions in other functionality
+9. **Final verification**
+   - Run full test suite: confirm no regressions
+   - Ensure all new tests pass
+   - Clean build with no errors
 
-11. **Commit changes**
-    - Branch: `feature/soundcloud-rate-limiting`
-    - Message: "feat: implement SoundCloud API rate limit handling"
-    - Include: service, client updates, tests, README
+10. **Commit completion**
+    - Commit remaining changes to feature branch
+    - Message: "feat: complete SoundCloud rate limit implementation"
 
-## Current Session (Session 11) - In Progress: Enhance Stats Command
+11. **Merge to master**
+    - Fast-forward merge feature/soundcloud-rate-limiting to master
+    - Ready for production
 
-### Goal
-Update stats command to show releases per genre (fixing README/implementation mismatch) and add optional verbose mode for style breakdown.
+## Session 11 - Completed: Enhance Stats Command
 
-### Steps to Implement
-1. **Update CollectionService.getStats() return type**
-   - Change from returning `genres: string[]` to `genreStats: Map<string, number>` (genre name → release count)
-   - Add `styleStats?: Map<string, number>` for verbose mode
-   - Current: returns only unique genre names (array)
-   - Target: returns genre names with count of releases containing that genre
-
-2. **Implement getGenreStats() method in CollectionService**
-   - Iterate through all releases and count occurrences of each genre
-   - Handle comma-separated genres in each release (split and count each)
-   - Return sorted map by count descending
-   - Reuse for both stats and optional verbose stats
-
-3. **Implement getStyleStats() method in CollectionService** (for verbose mode)
-   - Similar to getGenreStats but for styles field
-   - Only called when verbose flag is set
-   - Return sorted map by count descending
-
-4. **Update stats command to accept --verbose flag**
-   - Add `.option('-v, --verbose', 'Show detailed stats including style breakdown')`
-   - Pass verbose flag to collectionService.getStats(verbose)
-
-5. **Update CollectionService.getStats(verbose?) signature**
-   - Accept optional verbose boolean parameter
-   - Call getStyleStats() only when verbose is true
-   - More efficient than always calculating styles
-
-6. **Update stats command output formatting**
-   - Show "Top Genres:" with counts (e.g., "Rock: 15 releases")
-   - Display top 10 genres sorted by release count (descending)
-   - When verbose: add "Top Styles:" section below genres with same format
-   - Format: `  • Genre Name: N releases`
-
-7. **Update README stats section**
-   - Fix example output to match new format with release counts
-   - Add verbose example: `npm run dev -- stats yosemsweet --verbose`
-   - Update output section to show genre counts
-
-8. **Add tests for new stats functionality**
-   - Test getGenreStats() returns correct genre counts
-   - Test getStyleStats() returns correct style counts
-   - Test stats command output includes genre counts
-   - Test verbose flag triggers style stats calculation
-   - Test sorting by count (descending)
-   - Update existing stats tests (currently 3 tests checking old behavior)
-
-9. **Verify all tests pass**
-   - Run full test suite: `npm test`
-   - Ensure 93+ tests passing (adding ~5-6 new tests)
-   - Check no regressions in existing functionality
-
-10. **Commit changes**
-    - Branch: `feature/stats-command-enhancement`
-    - Message: "feat: enhance stats command with genre/style breakdown by count"
-    - Include: CollectionService, stats command, tests, README
+**Status:** ✅ COMPLETED and merged to master
+- Enhanced stats command with genre/style breakdown by count
+- CollectionService updated with getGenreStats() and getStyleStats()
+- Stats command displays top genres with release counts
+- Added --verbose flag for detailed style breakdown
+- All tests passing (93+ tests)
+- Merged feature/stats-command-enhancement to master
 
 ## Completed Features Summary
