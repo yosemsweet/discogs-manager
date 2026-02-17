@@ -13,7 +13,7 @@ export class CollectionService {
     this.db = db;
   }
 
-  async syncCollection(username: string, onProgress: ProgressCallback = noopProgress) {
+  async syncCollection(username: string, onProgress: ProgressCallback = noopProgress, forceRefresh: boolean = false) {
     try {
       onProgress({ stage: 'Fetching collection', current: 0, total: 0 });
       
@@ -24,6 +24,7 @@ export class CollectionService {
 
       let processedCount = 0;
       let failedCount = 0;
+      let skippedCount = 0;
       let currentPage = 1;
       
       for (const release of releases) {
@@ -31,9 +32,23 @@ export class CollectionService {
         const itemsPerPage = 50;
         currentPage = Math.floor(processedCount / itemsPerPage) + 1;
         
+        // Check if release already exists unless force refresh is enabled
+        if (!forceRefresh && await this.db.releaseExists(release.id)) {
+          skippedCount++;
+          onProgress({
+            stage: 'Syncing releases',
+            current: processedCount + skippedCount + 1,
+            total: totalReleases,
+            currentPage,
+            totalPages,
+            message: `Skipped existing release ${release.basic_information?.title || 'unknown'}`,
+          });
+          continue;
+        }
+        
         onProgress({
           stage: 'Syncing releases',
-          current: processedCount + 1,
+          current: processedCount + skippedCount + 1,
           total: totalReleases,
           currentPage,
           totalPages,
@@ -76,7 +91,7 @@ export class CollectionService {
         stage: 'Completed',
         current: totalReleases,
         total: totalReleases,
-        message: `Synced ${processedCount}/${totalReleases} releases. ${failedCount} failures queued for retry.`,
+        message: `Synced ${processedCount}/${totalReleases} releases. ${skippedCount} skipped (already in DB). ${failedCount} failures queued for retry.`,
       });
 
       return { successCount: processedCount, failureCount: failedCount };

@@ -10,6 +10,7 @@ export function createSyncCommand(discogsClient: DiscogsAPIClient, db: DatabaseM
   return new Command('sync')
     .description('Sync your Discogs collection to the local database')
     .option('-u, --username <username>', 'Discogs username')
+    .option('-f, --force', 'Force refresh all releases from Discogs API')
     .action(async (options) => {
       const spinner = ora().start();
       let lastMessage = '';
@@ -39,7 +40,7 @@ export function createSyncCommand(discogsClient: DiscogsAPIClient, db: DatabaseM
           lastMessage = message;
         };
 
-        const count = await collectionService.syncCollection(username, progressCallback);
+        const count = await collectionService.syncCollection(username, progressCallback, options.force);
         spinner.succeed(chalk.green(`✓ Successfully synced ${count} releases`));
         process.exit(0);
       } catch (error) {

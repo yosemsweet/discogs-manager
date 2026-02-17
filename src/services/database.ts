@@ -100,6 +100,14 @@ export class DatabaseManager {
     });
   }
 
+  releaseExists(discogsId: number): Promise<boolean> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare('SELECT 1 FROM releases WHERE discogsId = ? LIMIT 1');
+      const result = stmt.get(discogsId);
+      return !!result;
+    });
+  }
+
   getAllReleases(): Promise<StoredRelease[]> {
     return Promise.resolve().then(() => {
       const stmt = this.db.prepare('SELECT * FROM releases ORDER BY addedAt DESC');
