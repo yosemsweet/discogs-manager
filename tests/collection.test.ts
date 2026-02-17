@@ -219,5 +219,156 @@ describe('CollectionService', () => {
       expect(stats.yearsSpan.min).toBe(2020);
       expect(stats.yearsSpan.max).toBe(2022);
     });
+
+    test('getGenreStats returns correct genre counts', async () => {
+      const releases = [
+        {
+          discogsId: 1,
+          title: 'Album 1',
+          artists: 'Artist 1',
+          year: 2020,
+          genres: 'Rock, Pop',
+          styles: 'Alternative',
+          addedAt: new Date(),
+        },
+        {
+          discogsId: 2,
+          title: 'Album 2',
+          artists: 'Artist 2',
+          year: 2022,
+          genres: 'Rock, Electronic',
+          styles: 'Bebop',
+          addedAt: new Date(),
+        },
+        {
+          discogsId: 3,
+          title: 'Album 3',
+          artists: 'Artist 3',
+          year: 2021,
+          genres: 'Pop, Jazz',
+          styles: 'Swing',
+          addedAt: new Date(),
+        },
+      ];
+
+      (dbMock.getAllReleases as jest.Mock).mockResolvedValue(releases);
+
+      const genreStats = await collectionService.getGenreStats();
+
+      expect(genreStats.size).toBe(4);
+      expect(genreStats.get('Rock')).toBe(2);
+      expect(genreStats.get('Pop')).toBe(2);
+      expect(genreStats.get('Electronic')).toBe(1);
+      expect(genreStats.get('Jazz')).toBe(1);
+    });
+
+    test('getStyleStats returns correct style counts', async () => {
+      const releases = [
+        {
+          discogsId: 1,
+          title: 'Album 1',
+          artists: 'Artist 1',
+          year: 2020,
+          genres: 'Rock, Pop',
+          styles: 'Alternative, Hard Rock',
+          addedAt: new Date(),
+        },
+        {
+          discogsId: 2,
+          title: 'Album 2',
+          artists: 'Artist 2',
+          year: 2022,
+          genres: 'Rock, Electronic',
+          styles: 'Hard Rock',
+          addedAt: new Date(),
+        },
+        {
+          discogsId: 3,
+          title: 'Album 3',
+          artists: 'Artist 3',
+          year: 2021,
+          genres: 'Electronic',
+          styles: 'Ambient',
+          addedAt: new Date(),
+        },
+      ];
+
+      (dbMock.getAllReleases as jest.Mock).mockResolvedValue(releases);
+
+      const styleStats = await collectionService.getStyleStats();
+
+      expect(styleStats.size).toBe(3);
+      expect(styleStats.get('Hard Rock')).toBe(2);
+      expect(styleStats.get('Alternative')).toBe(1);
+      expect(styleStats.get('Ambient')).toBe(1);
+    });
+
+    test('getStats returns genreStats and excludes styleStats by default', async () => {
+      const releases = [
+        {
+          discogsId: 1,
+          title: 'Album 1',
+          artists: 'Artist 1',
+          year: 2020,
+          genres: 'Rock, Pop',
+          styles: 'Alternative',
+          addedAt: new Date(),
+        },
+      ];
+
+      (dbMock.getAllReleases as jest.Mock).mockResolvedValue(releases);
+
+      const stats = await collectionService.getStats();
+
+      expect(stats.genreStats).toBeDefined();
+      expect(stats.genreStats.get('Rock')).toBe(1);
+      expect(stats.styleStats).toBeUndefined();
+    });
+
+    test('getStats returns styleStats when verbose is true', async () => {
+      const releases = [
+        {
+          discogsId: 1,
+          title: 'Album 1',
+          artists: 'Artist 1',
+          year: 2020,
+          genres: 'Rock, Pop',
+          styles: 'Alternative',
+          addedAt: new Date(),
+        },
+      ];
+
+      (dbMock.getAllReleases as jest.Mock).mockResolvedValue(releases);
+
+      const stats = await collectionService.getStats(true);
+
+      expect(stats.genreStats).toBeDefined();
+      expect(stats.styleStats).toBeDefined();
+      expect(stats.styleStats?.get('Alternative')).toBe(1);
+    });
+
+    test('genre stats are sorted by count descending', async () => {
+      const releases = [
+        { discogsId: 1, title: 'A1', artists: 'A', year: 2020, genres: 'Rock', styles: '', addedAt: new Date() },
+        { discogsId: 2, title: 'A2', artists: 'A', year: 2020, genres: 'Rock', styles: '', addedAt: new Date() },
+        { discogsId: 3, title: 'A3', artists: 'A', year: 2020, genres: 'Rock', styles: '', addedAt: new Date() },
+        { discogsId: 4, title: 'A4', artists: 'A', year: 2020, genres: 'Pop', styles: '', addedAt: new Date() },
+        { discogsId: 5, title: 'A5', artists: 'A', year: 2020, genres: 'Pop', styles: '', addedAt: new Date() },
+        { discogsId: 6, title: 'A6', artists: 'A', year: 2020, genres: 'Jazz', styles: '', addedAt: new Date() },
+      ];
+
+      (dbMock.getAllReleases as jest.Mock).mockResolvedValue(releases);
+
+      const genreStats = await collectionService.getGenreStats();
+      const entries = Array.from(genreStats.entries());
+
+      // Check order: Rock (3), Pop (2), Jazz (1)
+      expect(entries[0][0]).toBe('Rock');
+      expect(entries[0][1]).toBe(3);
+      expect(entries[1][0]).toBe('Pop');
+      expect(entries[1][1]).toBe(2);
+      expect(entries[2][0]).toBe('Jazz');
+      expect(entries[2][1]).toBe(1);
+    });
   });
 });

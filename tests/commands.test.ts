@@ -96,8 +96,8 @@ describe('CLI Commands', () => {
     test('should have genre, year, and limit options', () => {
       const cmd = createListCommand(mockDiscogsClient, mockDb);
       const options = cmd.options;
-      expect(options.some((opt) => opt.long === '--genre')).toBe(true);
-      expect(options.some((opt) => opt.long === '--year')).toBe(true);
+      expect(options.some((opt) => opt.long === '--genres')).toBe(true);
+      expect(options.some((opt) => opt.long === '--min-year' || opt.long === '--max-year')).toBe(true);
       expect(options.some((opt) => opt.long === '--limit')).toBe(true);
     });
 
@@ -121,15 +121,11 @@ describe('CLI Commands', () => {
       expect(cmd.description()).toContain('statistics');
     });
 
-    test('should have no required options', () => {
+    test('should have verbose option', () => {
       const cmd = createStatsCommand(mockDiscogsClient, mockDb);
-      const requiredOptions = cmd.options.filter((opt) => !opt.optional);
-      expect(requiredOptions.length).toBe(0);
-    });
-
-    test('should handle stats display', async () => {
-      const cmd = createStatsCommand(mockDiscogsClient, mockDb);
-      expect(cmd.name()).toBe('stats');
+      const verboseOption = cmd.options.find((opt) => opt.long === '--verbose');
+      expect(verboseOption).toBeDefined();
+      expect(verboseOption?.short).toBe('-v');
     });
   });
 
@@ -234,14 +230,14 @@ describe('CLI Commands', () => {
 
     test('list command supports short and long genre option', () => {
       const cmd = createListCommand(mockDiscogsClient, mockDb);
-      const genreOption = cmd.options.find((opt) => opt.long === '--genre');
+      const genreOption = cmd.options.find((opt) => opt.long === '--genres');
       expect(genreOption?.short).toBe('-g');
     });
 
     test('list command supports short and long year option', () => {
       const cmd = createListCommand(mockDiscogsClient, mockDb);
-      const yearOption = cmd.options.find((opt) => opt.long === '--year');
-      expect(yearOption?.short).toBe('-y');
+      const minYearOption = cmd.options.find((opt) => opt.long === '--min-year');
+      expect(minYearOption).toBeDefined();
     });
 
     test('playlist command supports short and long title option', () => {

@@ -228,19 +228,72 @@ export class CollectionService {
     return Array.from(genreSet).sort();
   }
 
-  async getStats() {
+  async getGenreStats(): Promise<Map<string, number>> {
     const releases = await this.db.getAllReleases();
-    const genres = await this.getGenres();
+    const genreMap = new Map<string, number>();
+
+    releases.forEach((r) => {
+      const genres = r.genres.split(', ');
+      genres.forEach((g) => {
+        const trimmed = g.trim();
+        genreMap.set(trimmed, (genreMap.get(trimmed) || 0) + 1);
+      });
+    });
+
+    // Sort by count descending, then by name ascending
+    return new Map(
+      Array.from(genreMap.entries()).sort((a, b) => {
+        if (b[1] !== a[1]) return b[1] - a[1]; // Sort by count descending
+        return a[0].localeCompare(b[0]); // Then by name ascending
+      })
+    );
+  }
+
+  async getStyleStats(): Promise<Map<string, number>> {
+    const releases = await this.db.getAllReleases();
+    const styleMap = new Map<string, number>();
+
+    releases.forEach((r) => {
+      if (r.styles) {
+        const styles = r.styles.split(', ');
+        styles.forEach((s) => {
+          const trimmed = s.trim();
+          if (trimmed) {
+            styleMap.set(trimmed, (styleMap.get(trimmed) || 0) + 1);
+          }
+        });
+      }
+    });
+
+    // Sort by count descending, then by name ascending
+    return new Map(
+      Array.from(styleMap.entries()).sort((a, b) => {
+        if (b[1] !== a[1]) return b[1] - a[1]; // Sort by count descending
+        return a[0].localeCompare(b[0]); // Then by name ascending
+      })
+    );
+  }
+
+  async getStats(verbose: boolean = false) {
+    const releases = await this.db.getAllReleases();
+    const genreStats = await this.getGenreStats();
     const years = new Set(releases.map((r) => r.year).filter((y) => y !== null && y !== undefined));
 
-    return {
+    const stats: any = {
       totalReleases: releases.length,
-      totalGenres: genres.length,
+      totalGenres: genreStats.size,
       yearsSpan: {
         min: years.size > 0 ? Math.min(...Array.from(years)) : 0,
         max: years.size > 0 ? Math.max(...Array.from(years)) : 0,
       },
-      genres,
+      genreStats,
     };
+
+    // Only calculate style stats if verbose mode is requested
+    if (verbose) {
+      stats.styleStats = await this.getStyleStats();
+    }
+
+    return stats;
   }
 }

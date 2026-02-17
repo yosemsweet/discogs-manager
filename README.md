@@ -181,12 +181,20 @@ Display comprehensive statistics about your collection.
 
 **Syntax:**
 ```bash
-npm run dev stats <username>
+npm run dev -- stats [username] [options]
 ```
+
+**Options:**
+- `[username]` - Discogs username (optional, uses env if not provided)
+- `-v, --verbose` - Show detailed stats including style breakdown
 
 **Examples:**
 ```bash
+# Show collection statistics
 npm run dev -- stats yosemsweet
+
+# Show statistics with style breakdown
+npm run dev -- stats yosemsweet --verbose
 ```
 
 **Output:**
@@ -201,6 +209,27 @@ Top Genres:
   • Rock: 15 releases
   • Electronic: 8 releases
   • Jazz: 5 releases
+  ...
+```
+
+**Output with --verbose:**
+```
+Collection Statistics for yosemsweet
+─────────────────────────────────────
+Total Releases: 42
+Total Genres: 18
+Year Range: 1969 - 2023
+
+Top Genres:
+  • Rock: 15 releases
+  • Electronic: 8 releases
+  • Jazz: 5 releases
+  ...
+
+Top Styles:
+  • Alternative Rock: 7 releases
+  • Synth-pop: 5 releases
+  • Post-bop: 3 releases
   ...
 ```
 
