@@ -69,16 +69,16 @@ npm run build
 
 ```bash
 # Sync your collection
-npm run dev sync yosemsweet
+npm run dev -- sync yosemsweet
 
 # View your collection stats
-npm run dev stats yosemsweet
+npm run dev -- stats yosemsweet
 
 # List releases
-npm run dev list yosemsweet
+npm run dev -- list yosemsweet
 
 # Create a playlist
-npm run dev playlist yosemsweet --title "My Playlist" --genres "Rock"
+npm run dev -- playlist yosemsweet --title "My Playlist" --genres "Rock"
 ```
 
 ## Commands
@@ -99,16 +99,16 @@ npm run dev sync <username> [options]
 **Examples:**
 ```bash
 # Initial sync (fetches all releases)
-npm run dev sync yosemsweet
+npm run dev -- sync yosemsweet
 
 # Sync again (skips existing releases, only fetches new ones)
-npm run dev sync yosemsweet
+npm run dev -- sync yosemsweet
 
 # Force refresh all releases
-npm run dev sync yosemsweet --force
+npm run dev -- sync yosemsweet --force
 
 # Use DISCOGS_USERNAME from .env
-npm run dev sync
+npm run dev -- sync
 ```
 
 **What Happens:**
@@ -147,22 +147,22 @@ npm run dev list <username> [options]
 **Examples:**
 ```bash
 # List all releases (first 50)
-npm run dev list yosemsweet
+npm run dev -- list yosemsweet
 
 # List rock releases
-npm run dev list yosemsweet --genres "Rock"
+npm run dev -- list yosemsweet --genres "Rock"
 
 # List releases from 1970-1989
-npm run dev list yosemsweet --min-year 1970 --max-year 1989
+npm run dev -- list yosemsweet --min-year 1970 --max-year 1989
 
 # List releases from 1980s with high ratings
-npm run dev list yosemsweet --min-year 1980 --max-year 1989 --min-rating 4
+npm run dev -- list yosemsweet --min-year 1980 --max-year 1989 --min-rating 4
 
 # Combine multiple filters
-npm run dev list yosemsweet --genres "Rock,Alternative" --min-year 2000
+npm run dev -- list yosemsweet --genres "Rock,Alternative" --min-year 2000
 
 # View albums by style
-npm run dev list yosemsweet --styles "Electronic,Ambient"
+npm run dev -- list yosemsweet --styles "Electronic,Ambient"
 ```
 
 **Output Format:**
@@ -186,7 +186,7 @@ npm run dev stats <username>
 
 **Examples:**
 ```bash
-npm run dev stats yosemsweet
+npm run dev -- stats yosemsweet
 ```
 
 **Output:**
@@ -218,10 +218,10 @@ npm run dev retry <username>
 **Examples:**
 ```bash
 # Retry failed releases
-npm run dev retry yosemsweet
+npm run dev -- retry yosemsweet
 
 # Check which releases are in the DLQ
-npm run dev retry yosemsweet
+npm run dev -- retry yosemsweet
 ```
 
 **What Happens:**
@@ -262,21 +262,21 @@ npm run dev playlist <username> [options]
 **Examples:**
 ```bash
 # Create a Rock playlist
-npm run dev playlist yosemsweet --title "Rock Classics" --genres "Rock"
+npm run dev -- playlist yosemsweet --title "Rock Classics" --genres "Rock"
 
 # Create a 1980s playlist
-npm run dev playlist yosemsweet --title "80s Hits" --min-year 1980 --max-year 1989 \
+npm run dev -- playlist yosemsweet --title "80s Hits" --min-year 1980 --max-year 1989 \
   --description "The best from the 1980s"
 
 # Create a high-rated Jazz playlist
-npm run dev playlist yosemsweet --title "Jazz Favorites" --genres "Jazz" --min-rating 4
+npm run dev -- playlist yosemsweet --title "Jazz Favorites" --genres "Jazz" --min-rating 4
 
 # Complex filtering: Electronic music from 2000+ with high ratings
-npm run dev playlist yosemsweet --title "Modern Electronic" --genres "Electronic" \
+npm run dev -- playlist yosemsweet --title "Modern Electronic" --genres "Electronic" \
   --min-year 2000 --min-rating 3 --description "Contemporary electronic music"
 
 # Create by style
-npm run dev playlist yosemsweet --title "Funk & Soul" --styles "Funk,Soul"
+npm run dev -- playlist yosemsweet --title "Funk & Soul" --styles "Funk,Soul"
 ```
 
 ---
@@ -294,7 +294,7 @@ When a release fails to sync (due to network errors, rate limits, etc.), it's au
 To retry failed releases later:
 
 ```bash
-npm run dev retry yosemsweet
+npm run dev -- retry yosemsweet
 ```
 
 ### Dead Letter Queue (DLQ)
@@ -373,12 +373,12 @@ SELECT * FROM dlq;
 
 2. **Subsequent Syncs**: Much faster as existing releases are skipped
    ```bash
-   npm run dev sync yosemsweet  # Skips cached releases, only fetches new ones
+   npm run dev -- sync yosemsweet  # Skips cached releases, only fetches new ones
    ```
 
 3. **Force Refresh**: Use `--force` only when needed to refresh all data
    ```bash
-   npm run dev sync yosemsweet --force  # Slower but updates all metadata
+   npm run dev -- sync yosemsweet --force  # Slower but updates all metadata
    ```
 
 4. **Batch Operations**: Combine filtering to reduce API calls
@@ -479,8 +479,8 @@ npm test            # Run test suite
 
 ### "Failed to fetch release" Warnings
 - **Cause:** Individual release fetch failed (404, network issue, etc.)
-- **Solution:** These are automatically queued for retry. Run `npm run dev retry <username>` later
-- **Manual Check:** Check the DLQ with `npm run dev retry <username>`
+- **Solution:** These are automatically queued for retry. Run `npm run dev -- retry <username>` later
+- **Manual Check:** Check the DLQ with `npm run dev -- retry <username>`
 
 ### "Invalid credentials"
 - **Cause:** Invalid token or username in `.env`
@@ -495,7 +495,7 @@ npm test            # Run test suite
 
 ### Empty Collection Results
 - **Cause:** Collection not synced yet
-- **Solution:** Run `npm run dev sync <username>` first
+- **Solution:** Run `npm run dev -- sync <username>` first
 
 ---
 
