@@ -21,6 +21,11 @@ export class DiscogsAPIClient {
   private rateLimitResetTime?: Date;
   private retryCount: number = 0;
 
+  private lastRateLimitCheck: number = 0;
+  private rateLimit: number = 60;
+  private rateLimitUsed: number = 0;
+  private rateLimitRemaining: number = 60;
+
   constructor(token: string, username: string) {
     if (!token || !username) {
       throw new Error('Discogs API requires both token and username');
@@ -60,6 +65,28 @@ export class DiscogsAPIClient {
         }
       },
     });
+  }
+
+  // Throttle requests if rate limit is low
+  private async throttleIfNeeded(headers: any) {
+    if (!headers) return;
+    // Discogs headers
+    const limit = parseInt(headers['x-discogs-ratelimit'] || '60');
+    const used = parseInt(headers['x-discogs-ratelimit-used'] || '0');
+    const remaining = parseInt(headers['x-discogs-ratelimit-remaining'] || '60');
+    this.rateLimit = limit;
+    this.rateLimitUsed = used;
+    this.rateLimitRemaining = remaining;
+
+    // If remaining is low, pause
+    if (remaining <= 2) {
+      Logger.warn(
+        `Rate limit nearly exhausted: ${remaining} remaining of ${limit}. ` +
+        `Pausing requests for 60 seconds to reset window.`
+      );
+      await new Promise((resolve) => setTimeout(resolve, 60000));
+      Logger.info('Resuming requests after rate limit pause.');
+    }
   }
 
   private handleRetryDelay(retryCount: number, error: any): number {
@@ -172,6 +199,7 @@ export class DiscogsAPIClient {
           per_page: 50, // Discogs API max per page
         },
       });
+      await this.throttleIfNeeded(response.headers);
       return response.data;
     } catch (error) {
       this.handleError(error, `getCollection(${username}, page ${page})`);
@@ -190,11 +218,10 @@ export class DiscogsAPIClient {
 
       while (hasMorePages) {
         const response = await this.getCollection(username, page);
-        
+        // ...existing code...
         if (response.releases && Array.isArray(response.releases)) {
           allReleases.push(...response.releases);
         }
-
         // Check if there are more pages
         if (response.pagination) {
           hasMorePages = page < response.pagination.pages;
@@ -224,6 +251,7 @@ export class DiscogsAPIClient {
       }
 
       const response = await this.client.get(`/releases/${releaseId}`);
+      await this.throttleIfNeeded(response.headers);
       return response.data;
     } catch (error) {
       this.handleError(error, `getRelease(${releaseId})`);
@@ -247,6 +275,7 @@ export class DiscogsAPIClient {
           per_page: limit,
         },
       });
+      await this.throttleIfNeeded(response.headers);
       return response.data;
     } catch (error) {
       this.handleError(error, `searchRelease(${query})`);
