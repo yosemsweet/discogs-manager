@@ -11,6 +11,7 @@ import { createListCommand } from './commands/list';
 import { createStatsCommand } from './commands/stats';
 import { createPlaylistCommand } from './commands/playlist';
 import { registerRetryCommand } from './commands/retry';
+import { createAuthCommand } from './commands/auth';
 
 dotenv.config();
 
@@ -22,8 +23,7 @@ program
 // Initialize clients and database
 const discogsToken = process.env.DISCOGS_API_TOKEN;
 const discogsUsername = process.env.DISCOGS_USERNAME;
-const soundcloudClientId = process.env.SOUNDCLOUD_CLIENT_ID;
-const soundcloudUserToken = process.env.SOUNDCLOUD_USER_TOKEN;
+const soundcloudAccessToken = process.env.SOUNDCLOUD_ACCESS_TOKEN;
 const dbPath = process.env.DB_PATH || './data/discogs-manager.db';
 
 if (!discogsToken || !discogsUsername) {
@@ -35,19 +35,30 @@ if (!discogsToken || !discogsUsername) {
 }
 
 const discogsClient = new DiscogsAPIClient(discogsToken, discogsUsername);
-const soundcloudClient = new SoundCloudAPIClient(
-  soundcloudClientId || '',
-  soundcloudUserToken || ''
-);
+
+// Initialize SoundCloud client only if access token is provided
+let soundcloudClient: SoundCloudAPIClient | null = null;
+if (soundcloudAccessToken) {
+  soundcloudClient = new SoundCloudAPIClient(soundcloudAccessToken);
+} else {
+  console.warn(
+    chalk.yellow('⚠️  SoundCloud access token not found. Playlist features will be unavailable.')
+  );
+  console.log(chalk.gray('   To authenticate with SoundCloud, run: npm run dev -- auth'));
+}
+
 const db = new DatabaseManager(dbPath);
 
 // Register commands
 program.addCommand(createSyncCommand(discogsClient, db));
 program.addCommand(createListCommand(discogsClient, db));
 program.addCommand(createStatsCommand(discogsClient, db));
-program.addCommand(
-  createPlaylistCommand(discogsClient, soundcloudClient, db)
-);
+program.addCommand(createAuthCommand());
+if (soundcloudClient) {
+  program.addCommand(
+    createPlaylistCommand(discogsClient, soundcloudClient, db)
+  );
+}
 registerRetryCommand(program);
 
 program.parse(process.argv);

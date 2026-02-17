@@ -31,21 +31,19 @@ export class SoundCloudRateLimitError extends SoundCloudAPIClientError {
 
 export class SoundCloudAPIClient {
   private client: AxiosInstance;
-  private clientId: string;
-  private userToken: string;
+  private accessToken: string;
 
-  constructor(clientId: string, userToken: string) {
-    if (!clientId || !userToken) {
-      throw new Error('SoundCloud API requires both clientId and userToken');
+  constructor(accessToken: string) {
+    if (!accessToken) {
+      throw new Error('SoundCloud API requires an OAuth access token');
     }
 
-    this.clientId = clientId;
-    this.userToken = userToken;
+    this.accessToken = accessToken;
 
     this.client = axios.create({
       baseURL: 'https://api.soundcloud.com',
-      params: {
-        client_id: clientId,
+      headers: {
+        'Authorization': `OAuth ${accessToken}`,
       },
       timeout: 30000, // 30 second timeout
     });
