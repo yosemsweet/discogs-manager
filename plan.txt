@@ -3,7 +3,61 @@
 ## Project Overview
 A command-line interface for managing Discogs music collections and creating SoundCloud playlists from collection subsets.
 
-## Completed Tasks
+## Critical Issue: SoundCloud API Integration Needs Fixes
+The playlist creation feature is failing due to API mismatches with SoundCloud documentation.
+
+### Issues Identified:
+1. **Wrong Endpoint for Playlist Creation**
+   - Current: `POST /me/playlists`
+   - Should be: `POST /playlists`
+   
+2. **Incorrect Request Body Structure**
+   - Current: Direct `{tracks: [...]}` 
+   - Should be: Wrapped in `{playlist: {tracks: [...]}}`
+   - Affects both create and add operations
+
+3. **Inefficient Flow**
+   - Creates empty playlist first, then adds tracks one-by-one
+   - Should include all tracks in initial creation request
+   - This reduces API calls significantly
+
+4. **Missing Response Validation**
+   - Playlist response not validated for required fields
+   - Error "Invalid playlist ID: must be a non-empty string" suggests id extraction is failing
+
+### Reference: SoundCloud API Docs
+**Create Playlist:**
+```
+POST /playlists
+-d "{'playlist': {'title':'YOUR_TITLE', 'sharing':'public', 'tracks':[{'id':1},{'id':2}]}}"
+```
+
+**Add Tracks:**
+```
+PUT /playlists/PLAYLIST_ID
+-d "{'playlist': {'tracks':[{'id':1}, {'id':2}]}}"
+```
+
+## Fix Implementation Plan (ACTIVE BRANCH: fix/soundcloud-api)
+
+### Phase 1: Fix Core API Issues
+- [ ] Update `createPlaylist()` endpoint from `/me/playlists` to `/playlists`
+- [ ] Wrap request body in `playlist` object wrapper
+- [ ] Fix `addTrackToPlaylist()` to wrap tracks in `playlist` object
+- [ ] Add response validation and better error logging
+- [ ] Create `createPlaylistWithTracks()` method for batch creation
+
+### Phase 2: Optimize Playlist Service
+- [ ] Modify `PlaylistService.createPlaylist()` to collect all tracks first
+- [ ] Use new batch method to create playlist with all tracks in one call
+- [ ] Reduce total API calls from (1 create + N adds) to (1 create + N searches)
+
+### Phase 3: Testing & Validation
+- [ ] Build with `npm run build`
+- [ ] Test auth with `npm run dev -- auth` (verify token is valid)
+- [ ] Test playlist with `npm run dev -- playlist --title "Test Jazz" --genres "Jazz"`
+
+## Completed Tasks (Previous Sessions)
 - [x] Full TypeScript/Node.js CLI implementation with all 5 commands (sync, list, stats, retry, playlist)
 - [x] Discogs API integration with pagination support (handles collections 50+ items)
 - [x] SQLite database with better-sqlite3 (synchronous, WAL-enabled, reliable)
@@ -15,12 +69,15 @@ A command-line interface for managing Discogs music collections and creating Sou
 - [x] Progress feedback with ora spinners across all commands
 - [x] Full test suite: 93 tests passing (100% pass rate)
 - [x] Clean CLI lifecycle: proper process exit handling
-- [x] Complete documentation: README, CONTRIBUTING, API_REFERENCE
+- [x] SoundCloud OAuth 2.1 with PKCE implementation
+- [x] Auth command with browser-based flow
+- [x] Improved auth command error handling and process finalization
 
 ## Build Status
-✅ Project compiles without errors
+✅ Project compiles without errors (awaiting SoundCloud API fixes)
 ✅ All 93 tests passing (100% pass rate)
-✅ Ready for production with robust error handling and rate limiting
+✅ OAuth 2.1 authentication working
+⚠️ Playlist creation failing due to API mismatches
 
 ## Session History
 - **Session 6**: Migrated sqlite3 → better-sqlite3, implemented Discogs pagination
@@ -28,26 +85,9 @@ A command-line interface for managing Discogs music collections and creating Sou
 - **Session 9**: Merged feature/make-retries-work to master
 - **Session 10**: Implemented list command comprehensive filtering (genres, styles, year range, rating range), updated documentation
 - **Session 11**: Enhanced stats command with genre/style breakdown by count, added --verbose flag
-
-## Current Session (Session 14) - In Progress: Complete SoundCloud Rate Limit Implementation
-
-### Goal
-Complete and merge the SoundCloud API rate limit handling implementation to master.
-
-### Progress Summary (Session 14)
-
-**All Steps Completed and Merged to Master! ✅**
-
-✅ **Step 3: Implement throttling strategy**
-   - Added throttleIfApproachingLimit() async method to SoundCloudAPIClient
-   - Checks for exceeded limit and throws error if remaining ≤ 0
-   - Pauses execution when approaching limit (≤5 remaining)
-   - Logs warning with human-readable wait time
-   - Resumes automatically after reset_time
-
-✅ **Step 4: Update PlaylistService with rate limit awareness**
-   - Injected SoundCloudRateLimitService into PlaylistService constructor
-   - Pre-checks rate limit before creating playlist
+- **Session 14**: Completed SoundCloud rate limit implementation, merged to master
+- **Session 15**: Implemented OAuth 2.1 with PKCE, improved auth command, merged to master
+- **Current**: Fixing SoundCloud API endpoint mismatches (branch: fix/soundcloud-api)
    - Calls throttleIfApproachingLimit() in playlist creation loop
    - Throws descriptive error if limit exceeded
 

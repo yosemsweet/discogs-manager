@@ -30,13 +30,12 @@ export class PlaylistService {
         );
       }
 
-      onProgress({ stage: 'Creating playlist', current: 0, total: releases.length, message: title });
-      const playlist = await this.soundcloudClient.createPlaylist(title, description);
+      onProgress({ stage: 'Searching for tracks', current: 0, total: releases.length, message: title });
 
-      onProgress({ stage: 'Saving playlist', current: 1, total: releases.length });
-      await this.db.createPlaylist(playlist.id, title, description);
+      // Search for all tracks first and collect valid track IDs
+      const trackData: Array<{ trackId: string; discogsId: number }> = [];
+      let searchedCount = 0;
 
-      let addedCount = 0;
       for (const release of releases) {
         // Throttle if approaching rate limit
         if (this.rateLimitService) {
@@ -44,29 +43,60 @@ export class PlaylistService {
         }
 
         onProgress({ 
-          stage: 'Adding tracks to playlist', 
-          current: addedCount + 1, 
+          stage: 'Searching for tracks', 
+          current: searchedCount + 1, 
           total: releases.length,
-          message: `Searching for "${release.title}" by ${release.artists}`,
+          message: `"${release.title}" by ${release.artists}`,
         });
 
         const searchQuery = `${release.title} ${release.artists}`;
-        const tracks = await this.soundcloudClient.searchTrack(searchQuery, 1);
+        const response = await this.soundcloudClient.searchTrack(searchQuery, 1);
 
+        // Handle different response structures
+        const tracks = Array.isArray(response) ? response : (response?.collection || []);
+        
         if (tracks && tracks.length > 0) {
           const track = tracks[0];
-          await this.soundcloudClient.addTrackToPlaylist(playlist.id, track.id);
-          await this.db.addReleaseToPlaylist(playlist.id, release.discogsId, track.id);
+          const trackId = track.id || track.track_id;
+          if (trackId) {
+            trackData.push({
+              trackId: trackId.toString(),
+              discogsId: release.discogsId,
+            });
+          }
         }
 
-        addedCount++;
+        searchedCount++;
+      }
+
+      const validTrackIds = trackData.map(t => t.trackId);
+
+      if (validTrackIds.length === 0) {
+        throw new Error('No tracks found in SoundCloud for any releases');
+      }
+
+      // Create playlist with all tracks in a single API call
+      onProgress({ stage: 'Creating playlist', current: searchedCount, total: releases.length, message: title });
+      const playlist = await this.soundcloudClient.createPlaylistWithTracks(
+        title,
+        validTrackIds,
+        description || '',
+        false // public playlist
+      );
+
+      onProgress({ stage: 'Saving playlist', current: searchedCount + 1, total: releases.length });
+      await this.db.createPlaylist(playlist.id, title, description);
+
+      // Save all release-to-playlist mappings
+      for (const { trackId, discogsId } of trackData) {
+        await this.db.addReleaseToPlaylist(playlist.id, discogsId, trackId);
       }
 
       onProgress({ 
         stage: 'Playlist created', 
         current: releases.length, 
         total: releases.length,
-        message: `Added ${addedCount} tracks to "${title}"`,
+        message: `Added ${validTrackIds.length} tracks to "${title}"`,
       });
 
       return playlist;

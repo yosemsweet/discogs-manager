@@ -190,14 +190,72 @@ export class SoundCloudAPIClient {
         throw new Error('Playlist description must be less than 1000 characters');
       }
 
-      const response = await this.client.post('/me/playlists', {
-        title: title.trim(),
-        description: description.trim(),
-        sharing: isPrivate ? 'private' : 'public',
+      // SoundCloud API requires body wrapped in 'playlist' object
+      const response = await this.client.post('/playlists', {
+        playlist: {
+          title: title.trim(),
+          description: description.trim(),
+          sharing: isPrivate ? 'private' : 'public',
+        },
       });
-      return response.data;
+
+      const playlist = response.data;
+      if (!playlist || !playlist.id) {
+        Logger.error(`[SoundCloud] Playlist created but no ID found in response: ${JSON.stringify(playlist)}`);
+        throw new Error(`Failed to extract playlist ID from SoundCloud response`);
+      }
+
+      return playlist;
     } catch (error) {
       this.handleError(error, `createPlaylist(${title})`);
+    }
+  }
+
+  async createPlaylistWithTracks(
+    title: string,
+    trackIds: string[],
+    description: string = '',
+    isPrivate: boolean = false
+  ) {
+    try {
+      if (!title || typeof title !== 'string' || title.trim().length === 0) {
+        throw new Error('Playlist title is required and must be a non-empty string');
+      }
+
+      if (!Array.isArray(trackIds) || trackIds.length === 0) {
+        throw new Error('Track IDs must be a non-empty array');
+      }
+
+      // Filter out empty track IDs and log if any are removed
+      const validTrackIds = trackIds.filter(id => typeof id === 'string' && id.trim().length > 0);
+      
+      if (validTrackIds.length === 0) {
+        throw new Error('No valid track IDs found');
+      }
+
+      if (validTrackIds.length < trackIds.length) {
+        Logger.warn(`[SoundCloud] Filtered out ${trackIds.length - validTrackIds.length} invalid track IDs`);
+      }
+
+      // SoundCloud API supports creating playlist with initial tracks in single request
+      const response = await this.client.post('/playlists', {
+        playlist: {
+          title: title.trim(),
+          description: description.trim(),
+          sharing: isPrivate ? 'private' : 'public',
+          tracks: validTrackIds.map(id => ({ id })),
+        },
+      });
+
+      const playlist = response.data;
+      if (!playlist || !playlist.id) {
+        Logger.error(`[SoundCloud] Playlist created but no ID found in response: ${JSON.stringify(playlist)}`);
+        throw new Error(`Failed to extract playlist ID from SoundCloud response`);
+      }
+
+      return playlist;
+    } catch (error) {
+      this.handleError(error, `createPlaylistWithTracks(${title}, ${trackIds.length} tracks)`);
     }
   }
 
@@ -211,12 +269,48 @@ export class SoundCloudAPIClient {
         throw new Error('Invalid track ID: must be a non-empty string');
       }
 
+      // SoundCloud API requires tracks wrapped in 'playlist' object
       const response = await this.client.put(`/playlists/${playlistId}`, {
-        tracks: [{ id: trackId }],
+        playlist: {
+          tracks: [{ id: trackId }],
+        },
       });
       return response.data;
     } catch (error) {
       this.handleError(error, `addTrackToPlaylist(${playlistId}, ${trackId})`);
+    }
+  }
+
+  async addTracksToPlaylist(playlistId: string, trackIds: string[]) {
+    try {
+      if (!playlistId || typeof playlistId !== 'string') {
+        throw new Error('Invalid playlist ID: must be a non-empty string');
+      }
+
+      if (!Array.isArray(trackIds) || trackIds.length === 0) {
+        throw new Error('Track IDs must be a non-empty array');
+      }
+
+      // Filter out empty track IDs
+      const validTrackIds = trackIds.filter(id => typeof id === 'string' && id.trim().length > 0);
+      
+      if (validTrackIds.length === 0) {
+        throw new Error('No valid track IDs found');
+      }
+
+      if (validTrackIds.length < trackIds.length) {
+        Logger.warn(`[SoundCloud] Filtered out ${trackIds.length - validTrackIds.length} invalid track IDs`);
+      }
+
+      // SoundCloud API supports adding multiple tracks in single request
+      const response = await this.client.put(`/playlists/${playlistId}`, {
+        playlist: {
+          tracks: validTrackIds.map(id => ({ id })),
+        },
+      });
+      return response.data;
+    } catch (error) {
+      this.handleError(error, `addTracksToPlaylist(${playlistId}, ${trackIds.length} tracks)`);
     }
   }
 
