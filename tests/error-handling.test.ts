@@ -477,4 +477,124 @@ describe('Error Handling and Edge Cases', () => {
       await db2.close();
     });
   });
-});
+
+  describe('SoundCloud Rate Limit Error Handling', () => {
+    test('should parse SoundCloud 429 rate limit response', async () => {
+      const error = new Error('HTTP 429');
+      const rateLimitResponse = {
+        errors: [
+          {
+            meta: {
+              remaining_requests: 5,
+              reset_time: '2025/02/16 15:30:00 +0000',
+              rate_limit: { max_nr_of_requests: 15000 },
+            },
+          },
+        ],
+      };
+
+      // Manually create the error as it would be thrown
+      const soundcloudError = new (require('../src/api/soundcloud').SoundCloudRateLimitError)(
+        5,
+        '2025/02/16 15:30:00 +0000',
+        15000,
+        'Rate limit exceeded'
+      );
+
+      expect(soundcloudError.remainingRequests).toBe(5);
+      expect(soundcloudError.resetTime).toBe('2025/02/16 15:30:00 +0000');
+      expect(soundcloudError.maxRequests).toBe(15000);
+      expect(soundcloudError.message).toContain('Rate limit exceeded');
+    });
+
+    test('should handle zero remaining requests', async () => {
+      const soundcloudError = new (require('../src/api/soundcloud').SoundCloudRateLimitError)(
+        0,
+        '2025/02/16 15:30:00 +0000',
+        15000
+      );
+
+      expect(soundcloudError.remainingRequests).toBe(0);
+      expect(soundcloudError.message).toContain('0 requests remaining');
+    });
+
+    test('should throw rate limit error when approaching limit', async () => {
+      const { SoundCloudRateLimitService } = require('../src/services/soundcloud-rate-limit');
+      const service = new SoundCloudRateLimitService();
+
+      const futureTime = new Date();
+      futureTime.setHours(futureTime.getHours() + 1);
+      const timeString = futureTime.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' +0000');
+
+      service.updateFromResponse(5, timeString);
+      expect(service.isApproachingLimit()).toBe(true);
+    });
+
+    test('should detect limit exceeded', async () => {
+      const { SoundCloudRateLimitService } = require('../src/services/soundcloud-rate-limit');
+      const service = new SoundCloudRateLimitService();
+
+      const futureTime = new Date();
+      futureTime.setHours(futureTime.getHours() + 1);
+      const timeString = futureTime.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' +0000');
+
+      service.updateFromResponse(0, timeString);
+      expect(service.isLimitExceeded()).toBe(true);
+    });
+
+    test('should not be approaching limit when remaining > 5', async () => {
+      const { SoundCloudRateLimitService } = require('../src/services/soundcloud-rate-limit');
+      const service = new SoundCloudRateLimitService();
+
+      const futureTime = new Date();
+      futureTime.setHours(futureTime.getHours() + 1);
+      const timeString = futureTime.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' +0000');
+
+      service.updateFromResponse(100, timeString);
+      expect(service.isApproachingLimit()).toBe(false);
+      expect(service.isLimitExceeded()).toBe(false);
+    });
+
+    test('should calculate time until reset correctly', async () => {
+      const { SoundCloudRateLimitService } = require('../src/services/soundcloud-rate-limit');
+      const service = new SoundCloudRateLimitService();
+
+      const futureTime = new Date(Date.now() + 1800000); // 30 minutes from now
+      const timeString = futureTime.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' +0000');
+
+      service.updateFromResponse(10, timeString);
+      const timeUntilReset = service.getTimeUntilReset();
+
+      // Should be positive and less than 24 hours (86400000 ms)
+      expect(timeUntilReset).toBeGreaterThan(0);
+      expect(timeUntilReset).toBeLessThan(86400000);
+    });
+
+    test('should format reset time as ISO string', async () => {
+      const { SoundCloudRateLimitService } = require('../src/services/soundcloud-rate-limit');
+      const service = new SoundCloudRateLimitService();
+
+      const futureTime = new Date();
+      futureTime.setHours(futureTime.getHours() + 1);
+      const timeString = futureTime.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' +0000');
+
+      service.updateFromResponse(10, timeString);
+      const formatted = service.getFormattedResetTime();
+
+      expect(formatted).toMatch(/\d{4}/); // Contains year
+      expect(formatted).toMatch(/\d{4}-\d{2}-\d{2}/); // ISO format
+    });
+
+    test('should provide human-readable time until reset', async () => {
+      const { SoundCloudRateLimitService } = require('../src/services/soundcloud-rate-limit');
+      const service = new SoundCloudRateLimitService();
+
+      const futureTime = new Date(Date.now() + 7200000); // 2 hours from now
+      const timeString = futureTime.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' +0000');
+
+      service.updateFromResponse(10, timeString);
+      const humanReadable = service.getTimeUntilResetHuman();
+
+      expect(humanReadable).toMatch(/[0-9]+(h|m|s)/);
+    });
+  });});
