@@ -1,4 +1,5 @@
 import { Logger } from '../utils/logger';
+import { DatabaseManager } from './database';
 
 export interface SoundCloudRateLimitState {
   remaining: number;
@@ -15,9 +16,42 @@ export class SoundCloudRateLimitService {
   private state: SoundCloudRateLimitState | null = null;
   private readonly MAX_REQUESTS = 15000;
   private readonly WARN_THRESHOLD = 5; // Warn when <= 5 requests remaining
+  private db: DatabaseManager | null;
 
-  constructor() {
+  constructor(db?: DatabaseManager) {
     this.state = null;
+    this.db = db || null;
+  }
+
+  /**
+   * Load rate limit state from database on initialization
+   */
+  async initializeFromDatabase(): Promise<void> {
+    if (!this.db) return;
+
+    try {
+      const stored = await this.db.getRateLimitState();
+      if (stored) {
+        // Check if state is not stale (less than 24 hours old)
+        const now = new Date().getTime();
+        const storedTime = new Date(stored.resetTime).getTime();
+        
+        // Only restore if reset time is in the future (state still valid)
+        if (storedTime > now) {
+          this.state = {
+            remaining: stored.remaining,
+            resetTime: new Date(stored.resetTime),
+            maxRequests: stored.maxRequests,
+            lastUpdated: new Date(),
+          };
+          Logger.debug(
+            `[SoundCloud] Restored rate limit state from database: ${stored.remaining}/${stored.maxRequests} remaining`
+          );
+        }
+      }
+    } catch (error) {
+      Logger.warn('Failed to restore rate limit state from database');
+    }
   }
 
   /**
@@ -35,6 +69,13 @@ export class SoundCloudRateLimitService {
         maxRequests: this.MAX_REQUESTS,
         lastUpdated: new Date(),
       };
+
+      // Persist to database
+      if (this.db) {
+        this.db.saveRateLimitState(remainingRequests, resetTime, this.MAX_REQUESTS).catch((err) => {
+          Logger.debug(`Failed to persist rate limit state: ${err}`);
+        });
+      }
 
       Logger.debug(
         `[SoundCloud] Rate limit updated: ${remainingRequests}/${this.MAX_REQUESTS} remaining, ` +

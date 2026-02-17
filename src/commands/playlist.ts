@@ -33,7 +33,8 @@ export function createPlaylistCommand(
         }
 
         spinner.text = 'Checking SoundCloud rate limits...';
-        const rateLimitService = new SoundCloudRateLimitService();
+        const rateLimitService = new SoundCloudRateLimitService(db);
+        await rateLimitService.initializeFromDatabase();
 
         const collectionService = new CollectionService(discogsClient, db);
         const playlistService = new PlaylistService(soundcloudClient, db, rateLimitService);

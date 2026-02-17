@@ -66,6 +66,14 @@ export class DatabaseManager {
           createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS soundcloud_rate_limit (
+          id INTEGER PRIMARY KEY,
+          remaining INTEGER DEFAULT 15000,
+          resetTime DATETIME,
+          maxRequests INTEGER DEFAULT 15000,
+          lastUpdated DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
         CREATE INDEX IF NOT EXISTS idx_releases_year ON releases(year);
         CREATE INDEX IF NOT EXISTS idx_releases_genres ON releases(genres);
         CREATE INDEX IF NOT EXISTS idx_retry_queue_username ON retry_queue(username);
@@ -226,6 +234,33 @@ export class DatabaseManager {
         );
         return (stmt.all() as Array<{ releaseId: number; errorMessage: string; createdAt: string }>) || [];
       }
+    });
+  }
+
+  saveRateLimitState(remaining: number, resetTime: Date, maxRequests: number = 15000): Promise<void> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(
+        `INSERT OR REPLACE INTO soundcloud_rate_limit (id, remaining, resetTime, maxRequests, lastUpdated)
+         VALUES (1, ?, ?, ?, CURRENT_TIMESTAMP)`
+      );
+      stmt.run(remaining, resetTime.toISOString(), maxRequests);
+    });
+  }
+
+  getRateLimitState(): Promise<{ remaining: number; resetTime: Date; maxRequests: number } | null> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(
+        `SELECT remaining, resetTime, maxRequests FROM soundcloud_rate_limit WHERE id = 1`
+      );
+      const row = stmt.get() as { remaining: number; resetTime: string; maxRequests: number } | undefined;
+      if (row) {
+        return {
+          remaining: row.remaining,
+          resetTime: new Date(row.resetTime),
+          maxRequests: row.maxRequests,
+        };
+      }
+      return null;
     });
   }
 
