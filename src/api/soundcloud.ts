@@ -1,4 +1,6 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
+import { SoundCloudRateLimitService } from '../services/soundcloud-rate-limit';
+import { Logger } from '../utils/logger';
 
 export class SoundCloudAPIClientError extends Error {
   constructor(
@@ -136,6 +138,44 @@ export class SoundCloudAPIClient {
       resetTime: 'unknown',
       maxRequests: 15000,
     };
+  }
+
+  /**
+   * Throttle requests when approaching SoundCloud rate limit.
+   * Pauses execution if remaining requests are low, waits until reset, then resumes.
+   *
+   * @param rateLimitService - Service managing rate limit state
+   * @throws {SoundCloudRateLimitError} if limit is exceeded
+   */
+  async throttleIfApproachingLimit(
+    rateLimitService: SoundCloudRateLimitService
+  ): Promise<void> {
+    if (rateLimitService.isLimitExceeded()) {
+      const state = rateLimitService.getState();
+      throw new SoundCloudRateLimitError(
+        state?.remaining || 0,
+        state?.resetTime?.toISOString() || 'unknown',
+        state?.maxRequests || 15000,
+        'Rate limit exceeded. Cannot make requests until reset.'
+      );
+    }
+
+    if (rateLimitService.isApproachingLimit()) {
+      const timeUntilReset = rateLimitService.getTimeUntilReset();
+      const humanReadableTime = rateLimitService.getTimeUntilResetHuman();
+
+      Logger.warn(
+        `[SoundCloud] Approaching rate limit (${rateLimitService.getState()?.remaining} requests remaining). ` +
+          `Pausing for ${humanReadableTime} until reset at ${rateLimitService.getFormattedResetTime()}`
+      );
+
+      // Wait until reset
+      await new Promise((resolve) => setTimeout(resolve, timeUntilReset));
+
+      // Reset service state after waiting
+      rateLimitService.reset();
+      Logger.info('[SoundCloud] Rate limit reset. Resuming requests with full allocation.');
+    }
   }
 
   async createPlaylist(title: string, description: string = '', isPrivate: boolean = false) {
