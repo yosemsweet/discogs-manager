@@ -69,6 +69,12 @@ export class CollectionService {
             addedAt: new Date(),
           };
           await this.db.addRelease(storedRelease);
+          
+          // Store the tracklist for later use
+          if (releaseDetails.tracklist && Array.isArray(releaseDetails.tracklist)) {
+            await this.db.addTracks(releaseDetails.id, releaseDetails.tracklist);
+          }
+          
           processedCount++;
         } catch (error) {
           failedCount++;

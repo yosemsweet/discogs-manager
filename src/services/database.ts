@@ -29,6 +29,18 @@ export class DatabaseManager {
           addedAt DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS tracks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          releaseId INTEGER NOT NULL,
+          title TEXT NOT NULL,
+          artists TEXT,
+          position TEXT,
+          duration TEXT,
+          createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (releaseId) REFERENCES releases(discogsId),
+          UNIQUE(releaseId, position)
+        );
+
         CREATE TABLE IF NOT EXISTS playlists (
           id TEXT PRIMARY KEY,
           title TEXT NOT NULL,
@@ -76,6 +88,7 @@ export class DatabaseManager {
 
         CREATE INDEX IF NOT EXISTS idx_releases_year ON releases(year);
         CREATE INDEX IF NOT EXISTS idx_releases_genres ON releases(genres);
+        CREATE INDEX IF NOT EXISTS idx_tracks_releaseId ON tracks(releaseId);
         CREATE INDEX IF NOT EXISTS idx_retry_queue_username ON retry_queue(username);
         CREATE INDEX IF NOT EXISTS idx_dlq_username ON dlq(username);
       `);
@@ -289,6 +302,32 @@ export class DatabaseManager {
         };
       }
       return null;
+    });
+  }
+
+  addTracks(releaseId: number, tracklist: Array<{ title: string; artists?: any; position?: string; duration?: string }>): Promise<void> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(
+        `INSERT OR IGNORE INTO tracks (releaseId, title, artists, position, duration)
+         VALUES (?, ?, ?, ?, ?)`
+      );
+
+      for (const track of tracklist) {
+        const artists = track.artists 
+          ? (Array.isArray(track.artists) ? track.artists.map((a: any) => a.name).join(', ') : track.artists)
+          : '';
+        stmt.run(releaseId, track.title, artists, track.position || '', track.duration || '');
+      }
+    });
+  }
+
+  getTracksForRelease(releaseId: number): Promise<Array<{ title: string; artists: string; position: string; duration: string }>> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(
+        `SELECT title, artists, position, duration FROM tracks WHERE releaseId = ? ORDER BY position`
+      );
+      const rows = stmt.all(releaseId) as Array<{ title: string; artists: string; position: string; duration: string }>;
+      return rows || [];
     });
   }
 

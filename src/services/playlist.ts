@@ -38,11 +38,12 @@ export class PlaylistService {
         return await this.updatePlaylist(String(existingPlaylist.soundcloudId), title, releases, onProgress);
       }
 
-      onProgress({ stage: 'Searching for tracks', current: 0, total: releases.length, message: title });
+      onProgress({ stage: 'Fetching tracklists', current: 0, total: releases.length, message: title });
 
-      // Search for all tracks first and collect valid track IDs
+      // Fetch tracklists from database and search for all tracks
       const trackData: Array<{ trackId: string; discogsId: number }> = [];
-      let searchedCount = 0;
+      let processedCount = 0;
+      let totalTracks = 0;
 
       for (const release of releases) {
         // Throttle if approaching rate limit
@@ -51,30 +52,52 @@ export class PlaylistService {
         }
 
         onProgress({ 
-          stage: 'Searching for tracks', 
-          current: searchedCount + 1, 
+          stage: 'Fetching tracklist', 
+          current: processedCount + 1, 
           total: releases.length,
-          message: `"${release.title}" by ${release.artists}`,
+          message: `"${release.title}"`,
         });
 
-        const searchQuery = `${release.title} ${release.artists}`;
-        const response = await this.soundcloudClient.searchTrack(searchQuery, 1);
+        let tracks: any[] = [];
+        try {
+          tracks = await this.db.getTracksForRelease(release.discogsId);
+        } catch (error) {
+          console.warn(`Failed to fetch tracks for release ${release.discogsId}: ${error}`);
+          // Continue with other releases
+        }
 
-        // Handle different response structures
-        const tracks = Array.isArray(response) ? response : (response?.collection || []);
-        
         if (tracks && tracks.length > 0) {
-          const track = tracks[0];
-          const trackId = track.id || track.track_id;
-          if (trackId) {
-            trackData.push({
-              trackId: trackId.toString(),
-              discogsId: release.discogsId,
-            });
+          // Search for each individual track on SoundCloud
+          for (const track of tracks) {
+            if (this.rateLimitService) {
+              await this.soundcloudClient.throttleIfApproachingLimit(this.rateLimitService);
+            }
+
+            const searchQuery = `${track.title} ${track.artists || ''}`;
+            
+            try {
+              const response = await this.soundcloudClient.searchTrack(searchQuery, 1);
+              const searchResults = Array.isArray(response) ? response : (response?.collection || []);
+              
+              if (searchResults && searchResults.length > 0) {
+                const foundTrack = searchResults[0];
+                const trackId = foundTrack.id || foundTrack.track_id;
+                if (trackId) {
+                  trackData.push({
+                    trackId: trackId.toString(),
+                    discogsId: release.discogsId,
+                  });
+                  totalTracks++;
+                }
+              }
+            } catch (error) {
+              console.warn(`Failed to search for track "${searchQuery}": ${error}`);
+              // Continue with next track
+            }
           }
         }
 
-        searchedCount++;
+        processedCount++;
       }
 
       const validTrackIds = trackData.map(t => t.trackId);
@@ -84,7 +107,7 @@ export class PlaylistService {
       }
 
       // Create playlist with all tracks in a single API call
-      onProgress({ stage: 'Creating playlist', current: searchedCount, total: releases.length, message: title });
+      onProgress({ stage: 'Creating playlist', current: processedCount, total: releases.length, message: title });
       const playlist = await this.soundcloudClient.createPlaylistWithTracks(
         title,
         validTrackIds,
@@ -92,7 +115,7 @@ export class PlaylistService {
         false // public playlist
       );
 
-      onProgress({ stage: 'Saving playlist', current: searchedCount + 1, total: releases.length });
+      onProgress({ stage: 'Saving playlist', current: processedCount + 1, total: releases.length });
       await this.db.createPlaylist(playlist.id, title, description);
 
       // Save all release-to-playlist mappings
@@ -104,7 +127,7 @@ export class PlaylistService {
         stage: 'Playlist created', 
         current: releases.length, 
         total: releases.length,
-        message: `Added ${validTrackIds.length} tracks to "${title}"`,
+        message: `Added ${validTrackIds.length} tracks from ${releases.length} releases to "${title}"`,
       });
 
       return playlist;
@@ -138,11 +161,11 @@ export class PlaylistService {
       return await this.soundcloudClient.getPlaylist(playlistId);
     }
 
-    onProgress({ stage: 'Searching for new tracks', current: 0, total: newReleases.length, message: title });
+    onProgress({ stage: 'Fetching tracklists', current: 0, total: newReleases.length, message: title });
 
-    // Search for new tracks only
+    // Fetch tracklists from database and search for new tracks
     const newTrackData: Array<{ trackId: string; discogsId: number }> = [];
-    let searchedCount = 0;
+    let processedCount = 0;
 
     for (const release of newReleases) {
       if (this.rateLimitService) {
@@ -150,29 +173,51 @@ export class PlaylistService {
       }
 
       onProgress({ 
-        stage: 'Searching for new tracks', 
-        current: searchedCount + 1, 
+        stage: 'Fetching tracklist', 
+        current: processedCount + 1, 
         total: newReleases.length,
-        message: `"${release.title}" by ${release.artists}`,
+        message: `"${release.title}"`,
       });
 
-      const searchQuery = `${release.title} ${release.artists}`;
-      const response = await this.soundcloudClient.searchTrack(searchQuery, 1);
+      let tracks: any[] = [];
+      try {
+        tracks = await this.db.getTracksForRelease(release.discogsId);
+      } catch (error) {
+        console.warn(`Failed to fetch tracks for release ${release.discogsId}: ${error}`);
+        // Continue with other releases
+      }
 
-      const tracks = Array.isArray(response) ? response : (response?.collection || []);
-      
       if (tracks && tracks.length > 0) {
-        const track = tracks[0];
-        const trackId = track.id || track.track_id;
-        if (trackId) {
-          newTrackData.push({
-            trackId: trackId.toString(),
-            discogsId: release.discogsId,
-          });
+        // Search for each individual track on SoundCloud
+        for (const track of tracks) {
+          if (this.rateLimitService) {
+            await this.soundcloudClient.throttleIfApproachingLimit(this.rateLimitService);
+          }
+
+          const searchQuery = `${track.title} ${track.artists || ''}`;
+          
+          try {
+            const response = await this.soundcloudClient.searchTrack(searchQuery, 1);
+            const searchResults = Array.isArray(response) ? response : (response?.collection || []);
+            
+            if (searchResults && searchResults.length > 0) {
+              const foundTrack = searchResults[0];
+              const trackId = foundTrack.id || foundTrack.track_id;
+              if (trackId) {
+                newTrackData.push({
+                  trackId: trackId.toString(),
+                  discogsId: release.discogsId,
+                });
+              }
+            }
+          } catch (error) {
+            console.warn(`Failed to search for track "${searchQuery}": ${error}`);
+            // Continue with next track
+          }
         }
       }
 
-      searchedCount++;
+      processedCount++;
     }
 
     const newTrackIds = newTrackData.map(t => t.trackId);
@@ -188,7 +233,7 @@ export class PlaylistService {
     }
 
     // Add new tracks to existing playlist
-    onProgress({ stage: 'Adding new tracks', current: searchedCount, total: newReleases.length, message: title });
+    onProgress({ stage: 'Adding new tracks', current: processedCount, total: newReleases.length, message: title });
     await this.soundcloudClient.addTracksToPlaylist(playlistId, newTrackIds);
 
     // Save new release-to-playlist mappings in database
@@ -200,7 +245,7 @@ export class PlaylistService {
       stage: 'Playlist updated', 
       current: newReleases.length, 
       total: newReleases.length,
-      message: `Added ${newTrackIds.length} new tracks to "${title}"`,
+      message: `Added ${newTrackIds.length} new tracks from ${newReleases.length} new releases to "${title}"`,
     });
 
     return await this.soundcloudClient.getPlaylist(playlistId);

@@ -36,7 +36,7 @@ describe('Integration Tests - End-to-End Workflows', () => {
 
     // Initialize clients and services
     discogsClient = new DiscogsAPIClient('test-token', 'test-user');
-    soundcloudClient = new SoundCloudAPIClient('test-id', 'test-token');
+    soundcloudClient = new SoundCloudAPIClient('test-token');
     db = new DatabaseManager(':memory:');
 
     await db.initialized;
@@ -273,7 +273,7 @@ describe('Integration Tests - End-to-End Workflows', () => {
       }
 
       // Create playlist
-      const soundcloudClient2 = new SoundCloudAPIClient('test-id', 'test-token');
+      const soundcloudClient2 = new SoundCloudAPIClient('test-token');
       const playlistService2 = new PlaylistService(soundcloudClient2, db);
 
       const playlist = await playlistService2.createPlaylist(
@@ -314,7 +314,7 @@ describe('Integration Tests - End-to-End Workflows', () => {
         await db.addRelease(release);
       }
 
-      const soundcloudClient2 = new SoundCloudAPIClient('test-id', 'test-token');
+      const soundcloudClient2 = new SoundCloudAPIClient('test-token');
       const playlistService2 = new PlaylistService(soundcloudClient2, db);
 
       await playlistService2.createPlaylist('Test', releases);
@@ -334,7 +334,7 @@ describe('Integration Tests - End-to-End Workflows', () => {
         }),
       } as any);
 
-      const soundcloudClient2 = new SoundCloudAPIClient('test-id', 'test-token');
+      const soundcloudClient2 = new SoundCloudAPIClient('test-token');
       const playlistService2 = new PlaylistService(soundcloudClient2, db);
 
       const playlist = await playlistService2.createPlaylist('Empty', []);
@@ -404,7 +404,7 @@ describe('Integration Tests - End-to-End Workflows', () => {
         }),
       } as any);
 
-      const soundcloudClient2 = new SoundCloudAPIClient('test-id', 'test-token');
+      const soundcloudClient2 = new SoundCloudAPIClient('test-token');
       const playlistService2 = new PlaylistService(soundcloudClient2, db);
 
       const playlist = await playlistService2.createPlaylist(

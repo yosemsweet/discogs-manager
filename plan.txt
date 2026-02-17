@@ -1,12 +1,25 @@
 # Discogs Manager CLI - Development Plan
 
+## Current Session: Add Support for More Than 50 Tracks in Playlists
+
+The system currently seems limited to 50 tracks per playlist. This could be:
+1. SoundCloud API batch size limit
+2. Our internal batching logic
+3. Frontend constraint
+
+### Plan:
+1. **Batch Playlist Creation** - If more than 50 tracks, create playlist then add tracks in batches
+2. **Batch Add Tracks** - Implement batching in addTracksToPlaylist with configurable batch size
+3. **Update PlaylistService** - Use batching logic for large track counts
+4. **Test with 100+ tracks** - Verify the system can handle larger playlists
+
 ## Project Overview
 A command-line interface for managing Discogs music collections and creating SoundCloud playlists from collection subsets.
 
 ## Critical Issue: SoundCloud API Integration Needs Fixes
-The playlist creation feature is failing due to API mismatches with SoundCloud documentation.
+✅ RESOLVED - All API endpoints now match SoundCloud documentation
 
-### Issues Identified:
+## Completed Tasks (Previous Sessions)
 1. **Wrong Endpoint for Playlist Creation**
    - Current: `POST /me/playlists`
    - Should be: `POST /playlists`
