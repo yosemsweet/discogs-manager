@@ -348,4 +348,51 @@ export class SoundCloudAPIClient {
       this.handleError(error, `getPlaylist(${playlistId})`);
     }
   }
+
+  async getUserPlaylists(limit: number = 50) {
+    try {
+      if (!Number.isInteger(limit) || limit <= 0 || limit > 200) {
+        throw new Error('Invalid limit: must be an integer between 1 and 200');
+      }
+
+      const response = await this.client.get('/me/playlists', {
+        params: {
+          limit,
+          linked_partitioning: true,
+        },
+      });
+
+      // Handle paginated response
+      const playlists = Array.isArray(response.data) ? response.data : (response.data?.collection || []);
+      return playlists;
+    } catch (error) {
+      this.handleError(error, `getUserPlaylists(limit=${limit})`);
+    }
+  }
+
+  async getPlaylistTracks(playlistId: string, limit: number = 200) {
+    try {
+      if (!playlistId || typeof playlistId !== 'string') {
+        throw new Error('Invalid playlist ID: must be a non-empty string');
+      }
+
+      if (!Number.isInteger(limit) || limit <= 0 || limit > 200) {
+        throw new Error('Invalid limit: must be an integer between 1 and 200');
+      }
+
+      const response = await this.client.get(`/playlists/${playlistId}`, {
+        params: {
+          limit,
+          linked_partitioning: true,
+          show_tracks: true,
+        },
+      });
+
+      const playlist = response.data;
+      const tracks = Array.isArray(playlist.tracks) ? playlist.tracks : (playlist.tracks?.collection || []);
+      return tracks;
+    } catch (error) {
+      this.handleError(error, `getPlaylistTracks(${playlistId})`);
+    }
+  }
 }

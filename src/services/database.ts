@@ -142,9 +142,11 @@ export class DatabaseManager {
   createPlaylist(playlistId: string, title: string, description?: string): Promise<void> {
     return Promise.resolve().then(() => {
       const stmt = this.db.prepare(
-        'INSERT INTO playlists (id, title, description) VALUES (?, ?, ?)'
+        'INSERT OR IGNORE INTO playlists (id, title, description, soundcloudId) VALUES (?, ?, ?, ?)'
       );
-      stmt.run(playlistId, title, description || '');
+      // Ensure playlistId is stored as string to preserve precision
+      const playlistIdStr = String(playlistId);
+      stmt.run(playlistIdStr, title, description || '', playlistIdStr);
     });
   }
 
@@ -169,6 +171,32 @@ export class DatabaseManager {
         WHERE pr.playlistId = ?`
       );
       return (stmt.all(playlistId) as StoredRelease[]) || [];
+    });
+  }
+
+  getPlaylistByTitle(title: string): Promise<{ id: string; soundcloudId: string; description?: string } | null> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(
+        `SELECT id, soundcloudId, description FROM playlists WHERE title = ? ORDER BY updatedAt DESC LIMIT 1`
+      );
+      const result = stmt.get(title) as any;
+      if (result) {
+        return {
+          id: String(result.id),
+          soundcloudId: String(result.soundcloudId),
+          description: result.description,
+        };
+      }
+      return null;
+    });
+  }
+
+  getPlaylistTracks(playlistId: string): Promise<Array<{ soundcloudTrackId: string; releaseId: number }>> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(
+        `SELECT soundcloudTrackId, releaseId FROM playlist_releases WHERE playlistId = ?`
+      );
+      return (stmt.all(playlistId) as Array<{ soundcloudTrackId: string; releaseId: number }>) || [];
     });
   }
 
