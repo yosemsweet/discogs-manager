@@ -342,7 +342,11 @@ The DLQ helps identify permanently problematic releases for manual investigation
 
 ## Rate Limiting
 
-Discogs API limits requests using a **moving 60-second window**. This CLI handles it automatically:
+This CLI handles rate limits from both the Discogs and SoundCloud APIs automatically.
+
+### Discogs API Rate Limiting
+
+Discogs API limits requests using a **moving 60-second window**:
 
 **How It Works:**
 1. After each request, checks `X-Discogs-Ratelimit-Remaining` header
@@ -356,7 +360,30 @@ Discogs API limits requests using a **moving 60-second window**. This CLI handle
 [INFO] Resuming requests after rate limit pause.
 ```
 
-No manual intervention needed—the CLI stays within limits automatically!
+### SoundCloud API Rate Limiting
+
+SoundCloud limits requests to **15,000 plays per 24-hour rolling window**. The CLI handles this intelligently:
+
+**How It Works:**
+1. Tracks remaining requests after each API call
+2. If remaining ≤ 5 requests, automatically pauses
+3. Shows the reset time and waits until limit refreshes (24-hour window)
+4. Resumes automatically with full allowance
+
+**You'll See:**
+```
+[WARN] [SoundCloud] Approaching rate limit (4 requests remaining). 
+       Pausing for 23h 58m 30s until reset at 2025-02-17T15:30:00.000Z
+[INFO] [SoundCloud] Rate limit reset. Resuming requests with full allocation.
+```
+
+**Key Features:**
+- Automatic throttling prevents 429 errors
+- Rate limit state persists across CLI runs (stored in database)
+- Works seamlessly with playlist creation
+- No manual intervention required
+
+No manual intervention needed—both CLIs stay within limits automatically!
 
 ---
 
@@ -371,6 +398,7 @@ The CLI uses **better-sqlite3** for fast, local caching:
   - `playlist_releases` - Links between playlists and releases
   - `retry_queue` - Failed releases pending retry
   - `dlq` - Dead letter queue for permanent failures
+  - `soundcloud_rate_limit` - SoundCloud rate limit state (remaining, reset_time)
 - **WAL Mode:** Enabled for concurrent read/write access
 
 ### Viewing the Database
@@ -502,8 +530,11 @@ npm test            # Run test suite
 ## Troubleshooting
 
 ### "Rate limit exceeded" Errors
-- **Cause:** API limit reached
-- **Solution:** The CLI now handles this automatically! If you see rate limit logs, it's pausing and resuming correctly.
+- **Discogs API:** The CLI now handles this automatically! If you see rate limit logs, it's pausing and resuming correctly.
+- **SoundCloud API:** Limited to 15,000 requests per 24 hours. The CLI automatically throttles when approaching the limit.
+  - **If Limit Exceeded:** Wait 24 hours from the reset time shown in the error message, or check the database for the stored reset time
+  - **See Current State:** The rate limit state is stored in the database (`soundcloud_rate_limit` table)
+- **Solution:** The CLI handles throttling automatically
 - **Manual Check:** Reduce frequency of API calls or use `--force` less often
 
 ### "Failed to fetch release" Warnings
