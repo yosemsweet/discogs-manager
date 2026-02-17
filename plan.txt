@@ -27,6 +27,100 @@ A command-line interface for managing Discogs music collections and creating Sou
 - **Session 8**: Added error handling (retry queue + DLQ), local rate limit throttling, database skip-existing optimization
 - **Session 9**: Merged feature/make-retries-work to master
 - **Session 10**: Implemented list command comprehensive filtering (genres, styles, year range, rating range), updated documentation
+- **Session 11**: Enhanced stats command with genre/style breakdown by count, added --verbose flag
+
+## Current Session (Session 12) - In Progress: Handle SoundCloud Rate Limits
+
+### Goal
+Implement SoundCloud API rate limit handling to prevent 429 errors and enable graceful throttling for playlist creation operations.
+
+### SoundCloud Rate Limit Context
+- **Global Rate Limit**: None (no aggregate limit enforced)
+- **Play Request Limit**: 15,000 requests per 24-hour window (includes `/tracks/:id/stream`)
+- **Rate Limit Window**: 24-hour rolling window (resets after first request expires)
+- **Error Response**: HTTP 429 with JSON body containing:
+  - `group`: "plays" (rate limit group name)
+  - `max_nr_of_requests`: 15,000
+  - `time_window`: "PT24H" (ISO 8601 format)
+  - `remaining_requests`: Number of requests left
+  - `reset_time`: When limit resets (format: `yyyy/MM/dd HH:mm:ss Z`)
+
+### Steps to Implement
+1. **Create SoundCloud rate limit tracking service**
+   - New file: `src/services/soundcloud-rate-limit.ts`
+   - Track rate limit state: `remaining`, `reset_time`, `max_requests`
+   - Methods: `updateFromResponse()`, `isApproachingLimit()`, `getTimeUntilReset()`
+   - Store state to database for persistence across CLI runs
+   - Add database table: `soundcloud_rate_limit` (username, remaining, reset_time, max_requests, last_updated)
+
+2. **Update SoundCloudAPIClient with rate limit handling**
+   - Parse HTTP 429 response and extract rate limit metadata from JSON error body
+   - Create custom error: `SoundCloudRateLimitError` extending existing error class
+   - Extract `reset_time`, `remaining_requests` from response body
+   - Log rate limit info with: remaining requests, reset time, time until reset
+   - Create `createPlaylistWithTracks()` method that:
+     - Pre-checks if approaching limit before attempting creation
+     - Validates sufficient requests remain before proceeding
+     - Returns error with reset_time if limit exceeded
+
+3. **Implement throttling strategy in SoundCloudAPIClient**
+   - Add method `throttleIfApproachingLimit()` similar to Discogs implementation
+   - If `remaining_requests ≤ 5`: warn and pause until reset_time
+   - Display: "SoundCloud rate limit nearly exhausted. Pausing until reset..."
+   - Calculate wait time from response reset_time
+   - Resume automatically when reset_time passes
+   - Log resume message with full request allowance restored
+
+4. **Update PlaylistService with rate limit awareness**
+   - Fetch current rate limit state before creating playlist
+   - Check if sufficient requests remain (need N requests for tracks to add)
+   - Inform user if approaching/exceeding limit: show reset_time
+   - Suggest alternative: "Try again after [reset_time]"
+   - Add optional `--force` flag to skip limit check (not recommended)
+
+5. **Update playlist command with better feedback**
+   - Add progress tracking for playlist creation
+   - Display message before rate limit check: "Checking SoundCloud rate limits..."
+   - On rate limit error: show reset_time and explain why creation failed
+   - Offer suggestion: "Your rate limit will reset at [reset_time]. Try again then."
+   - Log rate limit state before and after operation
+
+6. **Update SoundCloudAPIClient to store rate limit in database**
+   - After each SoundCloud API call, update rate limit table
+   - Store: `remaining_requests`, `reset_time`, `max_requests`, `timestamp`
+   - Query on startup to restore previous rate limit state
+   - Help avoid repeated 429 errors across CLI invocations
+
+7. **Add tests for SoundCloud rate limit handling**
+   - Test parsing 429 response with rate limit metadata
+   - Test rate limit service: tracking remaining, checking limit, calculating reset time
+   - Test throttling logic: pause when approaching limit
+   - Test edge cases: zero remaining, past reset_time, invalid reset_time format
+   - Test playlist creation with rate limit check
+   - Mock SoundCloud responses with various rate limit scenarios
+
+8. **Update error handling tests**
+   - Add test for `SoundCloudRateLimitError` 
+   - Test error message formatting with reset_time
+   - Test timeout/retry behavior doesn't apply to 429 (it's not retryable)
+
+9. **Update README documentation**
+   - Add "SoundCloud Rate Limiting" section to error handling
+   - Explain 15,000 plays per 24 hours
+   - Show example: "Rate limit nearly exhausted. Pausing until [time]..."
+   - Explain automatic throttling prevents manual waiting
+   - Note: playlist creation each track counts as ~1 request
+
+10. **Verify all tests pass**
+    - Run full test suite: `npm test`
+    - Ensure existing 97 tests still pass
+    - Verify 6-8 new tests for rate limiting pass
+    - No regressions in other functionality
+
+11. **Commit changes**
+    - Branch: `feature/soundcloud-rate-limiting`
+    - Message: "feat: implement SoundCloud API rate limit handling"
+    - Include: service, client updates, tests, README
 
 ## Current Session (Session 11) - In Progress: Enhance Stats Command
 
