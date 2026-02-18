@@ -1,325 +1,108 @@
 # Discogs Manager CLI - Development Plan
 
-## Current Session: Phase 1 Improvements - Stability & Quality
+## Project Overview
+Command-line tool for managing Discogs collections and creating SoundCloud playlists. Full TypeScript/Node.js implementation with 5 commands, 125/125 tests passing.
 
-### ✅ Completed: Comprehensive Codebase Review
-A detailed code quality review has been completed and documented in `CODEBASE_REVIEW.md`.
-
-**Key Findings:**
-- 🟢 **Overall Health:** Good - Clean architecture with layered design
-- 🟡 **Code Quality:** Mixed - Good structure, some technical debt
-- 🔴 **Issues Identified:** 10 major weaknesses (documented in CODEBASE_REVIEW.md)
-
-**Initial Test Status:** 91/95 passing (4 integration test failures)
-
-### ✅ Phase 1: Stability & Quality (WEEKS 1-2) - IN PROGRESS
-
-#### Task 1: Fix Integration Tests ✅ COMPLETED
-- **Status:** All 125 tests passing (100%)
-- **Completed:** Fixed 4 failing integration tests (91/95 → 125/125)
-- **Root Cause:** Tests weren't adding tracklist data to database
-- **Solution:** Updated test setup to include tracklist fixtures
-- **Files Modified:** integration.test.ts, collection.test.ts
-- **Build Status:** ✅ Compiles cleanly, no TypeScript errors
-
-#### Task 2: Create Shared Command Handler ✅ COMPLETED
-- **Status:** All 6 commands refactored
-- **Effort:** ~2 hours
-- **Completed:** Reduced command handler duplication by ~180 lines
-- **Files Created:** src/utils/command-builder.ts (133 lines)
-- **Files Refactored:** 
-  - src/commands/sync.ts (61→44 lines, -27%)
-  - src/commands/list.ts (103→88 lines, -15%)
-  - src/commands/stats.ts (71→60 lines, -15%)
-  - src/commands/playlist.ts (123→90 lines, -27%)
-  - src/commands/auth.ts (207→171 lines, -17%)
-  - src/commands/retry.ts (51→48 lines, -6%)
-- **Total Net Reduction:** 116 lines removed, unified error handling patterns
-- **Build Status:** ✅ Compiles cleanly, all 125 tests passing
-- **Merged:** Fast-forward merge to master at commit 2a18f1e
-
-#### Task 3: Centralize Error Handling ✅ COMPLETED
-- **Status:** Fully implemented with comprehensive error classification
-- **Effort:** ~3 hours
-- **Files Created:** src/utils/error-handler.ts (341 lines)
-  - ErrorType enum: 13 error categories (HTTP 4xx/5xx, rate limit, network, validation, etc.)
-  - AppError class: Type-safe error handling with error type, status code, context, logging
-  - ErrorHandler utility: parse(), log(), wrapAsync(), retryAsync() with exponential backoff
-- **Files Refactored:**
-  - src/api/discogs.ts: Uses ErrorHandler.parse() for consistent error transformation
-  - src/api/soundcloud.ts: Uses ErrorHandler for rate limit and HTTP error handling
-  - src/services/{collection,playlist,database,soundcloud-oauth,soundcloud-rate-limit}.ts: Added ErrorHandler imports
-- **Key Features:**
-  - Consistent error classification across all error sources (Axios, standard Error, unknown)
-  - Distinguishes retryable vs permanent errors
-  - User-friendly error messages with operation context
-  - Automatic exponential backoff retry logic
-  - Backward compatible with existing error classes (DiscogsAPIClientError, SoundCloudAPIClientError)
-- **Total Changes:** 455 lines added, 95 lines removed
-- **Build Status:** ✅ Compiles cleanly, all 125 tests passing
-- **Merged:** Fast-forward merge to master at commit 9ee8e9a
-
-### Phase 1 Progress: ✅ 3 of 3 tasks COMPLETED (100%)
-
-**Summary:**
-- Total lines reduced: ~180 lines (command handlers) + error handling improvements  
-- All tests passing: 125/125 (100%)
-- Code quality improvements: Centralized error handling, reduced duplication, improved maintainability
-- Total effort: ~7-8 hours (test fixes: 1.5h + command handlers: 2h + error handling: 3-3.5h)
-
-### Recommended Next Steps:
-Phase 2 (Weeks 3-4): Refactor services + add validation layer
-Phase 3 (Weeks 5-6): Optimize performance (caching, concurrency)
-Phase 4 (Weeks 7-8): Add robustness (logging, recovery, sanitization)
-Phase 5 (Weeks 9-10): Documentation and test coverage
-
-**Estimated Total Effort (All Phases):** 52-69 hours for all improvements
-
-See `CODEBASE_REVIEW.md` for detailed analysis and `CODEBASE_REVIEW_SUMMARY.md` for quick reference.
+**Build Status:** ✅ Clean | **Tests:** 125/125 (100%) | **Current Branch:** master
 
 ---
 
-## Previous Session: Fetch Full Tracklists from Discogs for Multi-Track Playlists
+## Completed Work
 
-### Problem Identified:
-System was only getting ONE track per Discogs release, limiting playlists to 50 tracks maximum (if syncing 50 records). Each record can have 10+ tracks, but we weren't fetching them.
+### Prior Sessions (1-15)
+Core CLI, Discogs API integration, SoundCloud OAuth 2.1, rate limiting, database, 5 commands (sync, list, stats, playlist, auth, retry), advanced filtering, retry/DLQ queues, progress feedback.
 
-### Solution Implemented:
-1. **Database Tracklist Caching** ✅
-   - Added `tracks` table to store release tracklists (title, artists, position, duration)
-   - Unique constraint on (releaseId, position) to prevent duplicates
-   
-2. **Collection Sync Enhancement** ✅
-   - CollectionService now stores the full tracklist when syncing each release
-   - Tracklist fetched from Discogs `/releases/{id}` endpoint (same call as before)
-   - Stores in database for reuse during playlist creation
-   
-3. **Playlist Creation Refactoring** ✅
-   - PlaylistService now queries database for cached tracks instead of calling Discogs API again
-   - For each release, fetches all tracks from database
-   - Searches SoundCloud for EACH individual track (not just one per album)
-   - Can now create playlists with 100+ tracks per album
-   
-4. **Database Fixes** ✅
-   - Enabled `foreign_keys` pragma in SQLite to prevent constraint violations
-   - Clarified messaging to show "individual tracks" from multiple releases
+### Phase 1: Stability & Quality ✅ COMPLETE
+**Effort:** ~7-8 hours total
+- **Task 1:** Fixed 4 integration tests (91/95 → 125/125)
+- **Task 2:** Refactored 6 commands with CommandBuilder utility (-180 boilerplate lines)
+- **Task 3:** Created ErrorHandler with centralized error classification (13 error types)
 
-### Current Status:
-✅ Playlists are being created with multiple tracks per release
-⚠️ Playlist creation is **inconsistent** - got 422 error for "My Folk Collection"
-   - Jazz playlists worked
-   - Folk playlists failed with 422 (Unprocessable Entity)
-   - Suggests issue with certain track data or SoundCloud API constraints
+---
 
-### Next Steps:
-- Investigate 422 error - likely invalid track IDs or malformed requests
-- Check if certain genres/artists cause issues
-- May need to validate track IDs before sending to SoundCloud
-- Could be rate limiting or data validation issue
+## Future Work - Prioritized by Impact
 
-## Previous Session: Add Support for More Than 50 Tracks in Playlists
+### Phase 2: Services & Validation (WEEKS 3-4) - NEXT
 
-The system currently seems limited to 50 tracks per playlist. This could be:
-1. SoundCloud API batch size limit
-2. Our internal batching logic
-3. Frontend constraint
+**Priority 1: Enable TypeScript Strict Mode** ⭐
+- Effort: 4-6h | Impact: HIGH
+- Enable `strict: true` in tsconfig.json, fix `any` types across codebase
 
-### Plan:
-1. **Batch Playlist Creation** - If more than 50 tracks, create playlist then add tracks in batches
-2. **Batch Add Tracks** - Implement batching in addTracksToPlaylist with configurable batch size
-3. **Update PlaylistService** - Use batching logic for large track counts
-4. **Test with 100+ tracks** - Verify the system can handle larger playlists
+**Priority 2: Refactor PlaylistService** ⭐
+- Effort: 6-8h | Impact: HIGH
+- Extract TrackSearchService, PlaylistBatchManager; split concerns (currently ~300 lines)
 
-## Project Overview
-A command-line interface for managing Discogs music collections and creating SoundCloud playlists from collection subsets.
+**Priority 3: Add Input Validation Layer**
+- Effort: 4-5h | Impact: MEDIUM
+- Create Validator utility with schema validation; validate commands, API responses
 
-## Critical Issue: SoundCloud API Integration Needs Fixes
-✅ RESOLVED - All API endpoints now match SoundCloud documentation
+### Phase 3: Performance (WEEKS 5-6)
 
-## Completed Tasks (Previous Sessions)
-1. **Wrong Endpoint for Playlist Creation**
-   - Current: `POST /me/playlists`
-   - Should be: `POST /playlists`
-   
-2. **Incorrect Request Body Structure**
-   - Current: Direct `{tracks: [...]}` 
-   - Should be: Wrapped in `{playlist: {tracks: [...]}}`
-   - Affects both create and add operations
+**Priority 1: Implement Caching Layer**
+- Effort: 5-7h | Impact: MEDIUM
+- Cache release data, SoundCloud searches; time-based expiration (24h default)
 
-3. **Inefficient Flow**
-   - Creates empty playlist first, then adds tracks one-by-one
-   - Should include all tracks in initial creation request
-   - This reduces API calls significantly
+**Priority 2: Database Access Refactoring**
+- Effort: 3-4h | Impact: MEDIUM
+- QueryBuilder for common queries, transactions, migrations, connection pooling
 
-4. **Missing Response Validation**
-   - Playlist response not validated for required fields
-   - Error "Invalid playlist ID: must be a non-empty string" suggests id extraction is failing
+**Priority 3: Improve Concurrency**
+- Effort: 4-6h | Impact: LOW-MEDIUM
+- Parallel release fetching, batch size limits, queue system for rate-limited ops
 
-### Reference: SoundCloud API Docs
-**Create Playlist:**
+### Phase 4: Robustness (WEEKS 7-8)
+
+**Priority 1: Enhanced Logging**
+- Effort: 2-3h | Impact: MEDIUM
+- Structured logging (JSON), log levels, rotation, operation tracing
+
+**Priority 2: Graceful Error Recovery**
+- Effort: 3-4h | Impact: MEDIUM
+- Retry with backoff, partial sync recovery, circuit breaker, timeout handling
+
+**Priority 3: Data Sanitization & Security**
+- Effort: 2-3h | Impact: LOW
+- Input sanitization, rate limiting, OAuth security, secrets management
+
+### Phase 5: Documentation (WEEKS 9-10)
+
+**Priority 1: Comprehensive Documentation**
+- Effort: 3-4h | Impact: MEDIUM
+- ARCHITECTURE.md, API reference, troubleshooting, config documentation
+
+**Priority 2: Improve Test Coverage**
+- Effort: 4-5h | Impact: HIGH
+- Edge case tests, performance benchmarks, integration tests, coverage reporting
+
+**Priority 3: Setup CI/CD**
+- Effort: 2-3h | Impact: MEDIUM
+- GitHub Actions, pre-commit hooks, automated deployment, versioning
+
+---
+
+## Known Issues
+- Playlist creation occasionally fails with 422 on certain genres
+- Rate limit reset time may be off by seconds in edge cases
+
+---
+
+## Quick Reference
+
+**Build/Test:**
+```bash
+npm run build   # TypeScript compilation
+npm test       # All 125 tests
+npm run dev -- sync  # Test command
 ```
-POST /playlists
--d "{'playlist': {'title':'YOUR_TITLE', 'sharing':'public', 'tracks':[{'id':1},{'id':2}]}}"
-```
 
-**Add Tracks:**
-```
-PUT /playlists/PLAYLIST_ID
--d "{'playlist': {'tracks':[{'id':1}, {'id':2}]}}"
-```
-
-## Fix Implementation Plan (ACTIVE BRANCH: fix/soundcloud-api)
-
-### Phase 1: Fix Core API Issues
-- [ ] Update `createPlaylist()` endpoint from `/me/playlists` to `/playlists`
-- [ ] Wrap request body in `playlist` object wrapper
-- [ ] Fix `addTrackToPlaylist()` to wrap tracks in `playlist` object
-- [ ] Add response validation and better error logging
-- [ ] Create `createPlaylistWithTracks()` method for batch creation
-
-### Phase 2: Optimize Playlist Service
-- [ ] Modify `PlaylistService.createPlaylist()` to collect all tracks first
-- [ ] Use new batch method to create playlist with all tracks in one call
-- [ ] Reduce total API calls from (1 create + N adds) to (1 create + N searches)
-
-### Phase 3: Testing & Validation
-- [ ] Build with `npm run build`
-- [ ] Test auth with `npm run dev -- auth` (verify token is valid)
-- [ ] Test playlist with `npm run dev -- playlist --title "Test Jazz" --genres "Jazz"`
-
-## Completed Tasks (Previous Sessions)
-- [x] Full TypeScript/Node.js CLI implementation with all 5 commands (sync, list, stats, retry, playlist)
-- [x] Discogs API integration with pagination support (handles collections 50+ items)
-- [x] SQLite database with better-sqlite3 (synchronous, WAL-enabled, reliable)
-- [x] Service layer: CollectionService, PlaylistService, DatabaseManager
-- [x] Advanced filtering: genres, styles, year range, rating range
-- [x] Comprehensive error handling: retry queue + dead letter queue for failed releases
-- [x] Local rate limit throttling (proactive, no 429 errors)
-- [x] Database optimization: skip existing releases unless --force flag
-- [x] Progress feedback with ora spinners across all commands
-- [x] Full test suite: 93 tests passing (100% pass rate)
-- [x] Clean CLI lifecycle: proper process exit handling
-- [x] SoundCloud OAuth 2.1 with PKCE implementation
-- [x] Auth command with browser-based flow
-- [x] Improved auth command error handling and process finalization
-
-## Build Status
-✅ Project compiles without errors (awaiting SoundCloud API fixes)
-✅ All 93 tests passing (100% pass rate)
-✅ OAuth 2.1 authentication working
-⚠️ Playlist creation failing due to API mismatches
-
-## Session History
-- **Session 6**: Migrated sqlite3 → better-sqlite3, implemented Discogs pagination
-- **Session 8**: Added error handling (retry queue + DLQ), local rate limit throttling, database skip-existing optimization
-- **Session 9**: Merged feature/make-retries-work to master
-- **Session 10**: Implemented list command comprehensive filtering (genres, styles, year range, rating range), updated documentation
-- **Session 11**: Enhanced stats command with genre/style breakdown by count, added --verbose flag
-- **Session 14**: Completed SoundCloud rate limit implementation, merged to master
-- **Session 15**: Implemented OAuth 2.1 with PKCE, improved auth command, merged to master
-- **Current**: Fixing SoundCloud API endpoint mismatches (branch: fix/soundcloud-api)
-   - Calls throttleIfApproachingLimit() in playlist creation loop
-   - Throws descriptive error if limit exceeded
-
-✅ **Step 5: Update playlist command with rate limit feedback**
-   - Added SoundCloudRateLimitService import to playlist command
-   - Creates rate limit service with database
-   - Initializes from database on startup (restore previous state)
-   - Passes service to PlaylistService
-   - Enhanced error handling for rate limit errors with descriptive messages
-
-✅ **Step 6: Store rate limit state in database**
-   - Added soundcloud_rate_limit table to database schema
-   - Fields: id (primary), remaining, resetTime, maxRequests, lastUpdated
-   - Implemented saveRateLimitState() method in DatabaseManager
-   - Implemented getRateLimitState() method to restore on startup
-   - SoundCloudRateLimitService now persists state after each API response
-   - Automatically restores previous state via initializeFromDatabase()
-
-✅ **Step 7: Add comprehensive rate limit error tests**
-   - Added 8 new test cases to error-handling.test.ts
-   - Tests cover: error parsing, zero requests, approaching limit, exceeded limit, time calculations, formatting
-   - All tests passing with 125 total tests (97 existing + 28 new for rate limiting)
-   - No regressions in other functionality
-
-✅ **Step 8: Update README documentation**
-   - Enhanced "Rate Limiting" section with both Discogs and SoundCloud info
-   - Explains SoundCloud 15,000 per 24-hour limit
-   - Added automatic throttling behavior explanation
-   - Shows example log messages
-   - Updated troubleshooting section with SoundCloud rate limit guidance
-   - Added soundcloud_rate_limit table to database documentation
-
-✅ **Step 9: Final test verification**
-   - Confirmed all 125 tests passing (100% pass rate)
-   - No regressions in existing functionality
-   - TypeScript compiles cleanly
-
-✅ **Step 10: Commit all changes**
-   - 6 commits to feature/soundcloud-rate-limiting branch:
-     - Step 3: Throttling strategy
-     - Step 5: Playlist command feedback
-     - Step 6: Database persistence
-     - Step 7: Error tests
-     - Step 8: README documentation
-   - All commits on feature branch
-
-✅ **Step 11: Merge to master**
-   - Fast-forward merged feature/soundcloud-rate-limiting to master
-   - 9 files changed: +769 lines, -141 lines
-   - New files: soundcloud-rate-limit.ts (182 lines), soundcloud-rate-limit.test.ts (163 lines)
-   - Updated: soundcloud.ts, playlist.ts, database.ts, error-handling.test.ts, README.md, plan.txt
-   - Final verification: 125 tests passing, clean build on master
-
-### Implementation Summary
-
-The SoundCloud rate limit handling is now fully production-ready:
+**Docs:**
+- `CODEBASE_REVIEW.md` - Detailed analysis
+- `README.md` - User guide
+- `API_REFERENCE.md` - API details
 
 **Architecture:**
-- **SoundCloudRateLimitService**: Manages rate limit state with database persistence
-- **SoundCloudRateLimitError**: Custom error class for 429 responses
-- **Throttling Logic**: Automatic pause when approaching limit, resume after reset
-- **Database Persistence**: Stores/restores rate limit state across CLI runs
-- **Command Integration**: Playlist command creates and initializes rate limit service
-
-**Features:**
-- Prevents 429 errors through proactive throttling
-- 15,000 requests per 24-hour window
-- Automatic pause and resume without user intervention
-- Detailed logging with human-readable wait times
-- Reset time tracking and persistence
-- Comprehensive test coverage (20 rate limit tests + 8 error tests)
-
-**Test Coverage:**
-- 125 total tests passing (97 existing + 28 new)
-- SoundCloudRateLimitService: 20 unit tests
-- Error handling: 8 rate limit error tests
-- 100% pass rate with no regressions
-
-**Documentation:**
-- README explains both Discogs and SoundCloud throttling
-- Troubleshooting section covers 24-hour reset guidance
-- Database documentation includes soundcloud_rate_limit table
-
-### Branch Status
-- **Master:** Ready for production with all 11 steps completed and merged
-- **Feature branch:** feature/soundcloud-rate-limiting merged (can be deleted)
-
-### Ready for Next Session
-The project is now ready for:
-1. Additional features or enhancements
-2. Bug fixes or edge case handling
-3. Performance optimizations
-4. User testing and feedback
-
-## Session 11 - Completed: Enhance Stats Command
-
-**Status:** ✅ COMPLETED and merged to master
-- Enhanced stats command with genre/style breakdown by count
-- CollectionService updated with getGenreStats() and getStyleStats()
-- Stats command displays top genres with release counts
-- Added --verbose flag for detailed style breakdown
-- All tests passing (93+ tests)
-- Merged feature/stats-command-enhancement to master
-
-## Completed Features Summary
+- `src/api/` - API clients (Discogs, SoundCloud)
+- `src/services/` - Business logic
+- `src/commands/` - CLI commands
+- `src/utils/` - Utilities
+- `tests/` - Test suite (125 tests)
