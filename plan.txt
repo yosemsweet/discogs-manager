@@ -1,6 +1,38 @@
 # Discogs Manager CLI - Development Plan
 
-## Current Session: Fetch Full Tracklists from Discogs for Multi-Track Playlists
+## Current Session: Codebase Review and Improvement Strategy
+
+### Completed: Comprehensive Codebase Review
+A detailed code quality review has been completed and documented in `CODEBASE_REVIEW.md`.
+
+**Key Findings:**
+- 🟢 **Overall Health:** Good - Clean architecture with layered design
+- 🟡 **Code Quality:** Mixed - Good structure, some technical debt
+- 🔴 **Issues Identified:** 10 major weaknesses (see details below)
+
+**Test Status:** 91/95 passing (4 integration test failures due to incomplete mocking)
+
+### Top 5 Priorities for Improvement:
+1. **🔴 CRITICAL:** Fix 4 failing integration tests
+2. **🟠 HIGH:** Centralize error handling (currently scattered)
+3. **🟠 HIGH:** Reduce command handler duplication (6 identical patterns)
+4. **🟡 MEDIUM:** Enable TypeScript strict mode
+5. **🟡 MEDIUM:** Refactor PlaylistService (breaking up ~300 lines)
+
+### Recommended Next Steps:
+Phase 1 (Weeks 1-2): Fix tests + centralize errors + reduce duplication
+Phase 2 (Weeks 3-4): Refactor services + add validation layer
+Phase 3 (Weeks 5-6): Optimize performance (caching, concurrency)
+Phase 4 (Weeks 7-8): Add robustness (logging, recovery, sanitization)
+Phase 5 (Weeks 9-10): Documentation and test coverage
+
+**Estimated Total Effort:** 52-69 hours for all improvements
+
+See `CODEBASE_REVIEW.md` for detailed analysis and implementation plan.
+
+---
+
+## Previous Session: Fetch Full Tracklists from Discogs for Multi-Track Playlists
 
 ### Problem Identified:
 System was only getting ONE track per Discogs release, limiting playlists to 50 tracks maximum (if syncing 50 records). Each record can have 10+ tracks, but we weren't fetching them.
