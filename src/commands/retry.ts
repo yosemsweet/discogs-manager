@@ -1,9 +1,9 @@
 import { Command } from 'commander';
-import ora from 'ora';
 import { DiscogsAPIClient } from '../api/discogs';
 import { DatabaseManager } from '../services/database';
 import { CollectionService } from '../services/collection';
 import { Logger } from '../utils/logger';
+import { CommandBuilder } from '../utils/command-builder';
 
 export function registerRetryCommand(program: Command) {
   program
@@ -19,8 +19,10 @@ export function registerRetryCommand(program: Command) {
       const db = new DatabaseManager();
       await db.initialized;
 
+      const spinner = CommandBuilder.createSpinner();
+
       try {
-        const spinner = ora('Processing retry queue...').start();
+        spinner.text = 'Processing retry queue...';
 
         const discogsClient = new DiscogsAPIClient(token, username);
         const collectionService = new CollectionService(discogsClient, db);
@@ -33,7 +35,9 @@ export function registerRetryCommand(program: Command) {
         });
 
         spinner.succeed(
-          `Retry queue processed: ${retryResult.successCount} succeeded, ${retryResult.failureCount} failed`
+          CommandBuilder.formatSuccess(
+            `Retry queue processed: ${retryResult.successCount} succeeded, ${retryResult.failureCount} failed`
+          )
         );
 
         // Check DLQ
@@ -51,8 +55,10 @@ export function registerRetryCommand(program: Command) {
         } else {
           Logger.info('Dead Letter Queue is empty');
         }
+        process.exit(0);
       } catch (error) {
-        Logger.error(`Failed to process retry: ${error}`);
+        const message = error instanceof Error ? error.message : String(error);
+        spinner.fail(CommandBuilder.formatError(`Failed to process retry: ${message}`));
         process.exit(1);
       } finally {
         await db.close();

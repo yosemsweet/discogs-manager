@@ -1,61 +1,48 @@
 import { Command } from 'commander';
-import chalk from 'chalk';
-import ora from 'ora';
 import { DiscogsAPIClient } from '../api/discogs';
 import { DatabaseManager } from '../services/database';
 import { CollectionService } from '../services/collection';
-import { ProgressInfo } from '../utils/progress';
+import { CommandBuilder } from '../utils/command-builder';
 
 export function createSyncCommand(discogsClient: DiscogsAPIClient, db: DatabaseManager) {
-  return new Command('sync')
+  const cmd = new Command('sync')
     .description('Sync your Discogs collection to the local database')
     .option('-u, --username <username>', 'Discogs username')
     .option('-f, --force', 'Force refresh all releases from Discogs API')
-    .option('--release-ids <ids>', 'Comma-separated Discogs release IDs (for testing/debugging)')
-    .action(async (options) => {
-      const spinner = ora().start();
-      let lastMessage = '';
+    .option('--release-ids <ids>', 'Comma-separated Discogs release IDs (for testing/debugging)');
 
-      try {
-        const collectionService = new CollectionService(discogsClient, db);
-        const username = options.username || process.env.DISCOGS_USERNAME;
+  // Use CommandBuilder for unified error handling
+  cmd.action(async (options) => {
+    const spinner = CommandBuilder.createSpinner();
 
-        if (!username) {
-          spinner.fail('Username not provided. Use --username or set DISCOGS_USERNAME');
-          process.exit(1);
-        }
+    try {
+      const collectionService = new CollectionService(discogsClient, db);
+      const username = options.username || process.env.DISCOGS_USERNAME;
 
-        // Create progress callback that updates the spinner
-        const progressCallback = (progress: ProgressInfo) => {
-          let message = `${progress.stage}: ${progress.current}/${progress.total}`;
-          
-          if (progress.currentPage !== undefined && progress.totalPages !== undefined) {
-            message += ` (page ${progress.currentPage}/${progress.totalPages})`;
-          }
-          
-          if (progress.message) {
-            message += ` - ${progress.message}`;
-          }
-          
-          spinner.text = message;
-          lastMessage = message;
-        };
-
-        let count;
-        if (options.releaseIds) {
-          // Sync specific releases
-          const releaseIds = options.releaseIds.split(',').map((id: string) => parseInt(id.trim()));
-          count = await collectionService.syncSpecificReleases(username, releaseIds, progressCallback, options.force);
-        } else {
-          // Sync entire collection
-          count = await collectionService.syncCollection(username, progressCallback, options.force);
-        }
-
-        spinner.succeed(chalk.green(`✓ Successfully synced ${count} releases`));
-        process.exit(0);
-      } catch (error) {
-        spinner.fail(chalk.red(`✗ Failed to sync: ${error}`));
-        process.exit(1);
+      if (!username) {
+        throw new Error('Username not provided. Use --username or set DISCOGS_USERNAME');
       }
-    });
+
+      const progressCallback = CommandBuilder.createProgressCallback(spinner);
+
+      let count;
+      if (options.releaseIds) {
+        // Sync specific releases
+        const releaseIds = options.releaseIds.split(',').map((id: string) => parseInt(id.trim()));
+        count = await collectionService.syncSpecificReleases(username, releaseIds, progressCallback, options.force);
+      } else {
+        // Sync entire collection
+        count = await collectionService.syncCollection(username, progressCallback, options.force);
+      }
+
+      spinner.succeed(CommandBuilder.formatSuccess(`Successfully synced ${count} releases`));
+      process.exit(0);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      spinner.fail(CommandBuilder.formatError(message));
+      process.exit(1);
+    }
+  });
+
+  return cmd;
 }
