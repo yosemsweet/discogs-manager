@@ -137,6 +137,13 @@ export class DatabaseManager {
     });
   }
 
+  getReleaseByDiscogsId(discogsId: number): Promise<StoredRelease | null> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare('SELECT * FROM releases WHERE discogsId = ? LIMIT 1');
+      return (stmt.get(discogsId) as StoredRelease) || null;
+    });
+  }
+
   getReleasesByGenre(genre: string): Promise<StoredRelease[]> {
     return Promise.resolve().then(() => {
       const stmt = this.db.prepare('SELECT * FROM releases WHERE genres LIKE ? ORDER BY title');

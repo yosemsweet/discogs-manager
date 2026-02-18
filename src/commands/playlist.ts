@@ -20,6 +20,7 @@ export function createPlaylistCommand(
     .option('-t, --title <title>', 'Playlist title')
     .option('-d, --description <description>', 'Playlist description')
     .option('-g, --genres <genres>', 'Comma-separated genres to include')
+    .option('--release-ids <ids>', 'Comma-separated Discogs release IDs (for testing)')
     .option('--min-year <year>', 'Minimum year')
     .option('--max-year <year>', 'Maximum year')
     .option('--private', 'Create as private playlist')
@@ -39,25 +40,37 @@ export function createPlaylistCommand(
         const collectionService = new CollectionService(discogsClient, db);
         const playlistService = new PlaylistService(soundcloudClient, db, rateLimitService);
 
-        const filter: PlaylistFilter = {
-          genres: options.genres ? options.genres.split(',').map((g: string) => g.trim()) : undefined,
-          minYear: options.minYear ? parseInt(options.minYear) : undefined,
-          maxYear: options.maxYear ? parseInt(options.maxYear) : undefined,
-        };
+        let releases;
 
-        // Create progress callback for filtering
-        const filterProgressCallback = (progress: ProgressInfo) => {
-          let message = `${progress.stage}`;
-          if (progress.total > 0) {
-            message += `: ${progress.current}/${progress.total}`;
-          }
-          if (progress.message) {
-            message += ` - ${progress.message}`;
-          }
-          spinner.text = message;
-        };
+        // If release IDs are provided, use those specific releases
+        if (options.releaseIds) {
+          spinner.text = 'Fetching specified releases...';
+          const releaseIds = options.releaseIds.split(',').map((id: string) => parseInt(id.trim()));
+          releases = await Promise.all(
+            releaseIds.map((id: number) => db.getReleaseByDiscogsId(id))
+          );
+          releases = releases.filter((r) => r !== null);
+        } else {
+          const filter: PlaylistFilter = {
+            genres: options.genres ? options.genres.split(',').map((g: string) => g.trim()) : undefined,
+            minYear: options.minYear ? parseInt(options.minYear) : undefined,
+            maxYear: options.maxYear ? parseInt(options.maxYear) : undefined,
+          };
 
-        const releases = await collectionService.filterReleases(filter, filterProgressCallback);
+          // Create progress callback for filtering
+          const filterProgressCallback = (progress: ProgressInfo) => {
+            let message = `${progress.stage}`;
+            if (progress.total > 0) {
+              message += `: ${progress.current}/${progress.total}`;
+            }
+            if (progress.message) {
+              message += ` - ${progress.message}`;
+            }
+            spinner.text = message;
+          };
+
+          releases = await collectionService.filterReleases(filter, filterProgressCallback);
+        }
 
         if (releases.length === 0) {
           spinner.fail('No releases match the criteria');

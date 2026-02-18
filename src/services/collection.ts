@@ -100,9 +100,93 @@ export class CollectionService {
         message: `Synced ${processedCount}/${totalReleases} releases. ${skippedCount} skipped (already in DB). ${failedCount} failures queued for retry.`,
       });
 
-      return { successCount: processedCount, failureCount: failedCount };
+      return processedCount;
     } catch (error) {
       throw new Error(`Failed to sync collection: ${error}`);
+    }
+  }
+
+  async syncSpecificReleases(
+    username: string,
+    releaseIds: number[],
+    onProgress: ProgressCallback = noopProgress,
+    forceRefresh: boolean = false
+  ) {
+    try {
+      onProgress({ stage: 'Fetching specific releases', current: 0, total: releaseIds.length });
+
+      let processedCount = 0;
+      let failedCount = 0;
+      let skippedCount = 0;
+
+      for (const releaseId of releaseIds) {
+        // Check if release already exists unless force refresh is enabled
+        if (!forceRefresh && await this.db.releaseExists(releaseId)) {
+          skippedCount++;
+          onProgress({
+            stage: 'Syncing releases',
+            current: processedCount + skippedCount + 1,
+            total: releaseIds.length,
+            message: `Skipped existing release ${releaseId}`,
+          });
+          continue;
+        }
+
+        onProgress({
+          stage: 'Syncing releases',
+          current: processedCount + skippedCount + 1,
+          total: releaseIds.length,
+          message: `Fetching details for release ${releaseId}`,
+        });
+
+        try {
+          const releaseDetails = await this.discogsClient.getRelease(releaseId);
+          const storedRelease: StoredRelease = {
+            discogsId: releaseDetails.id,
+            title: releaseDetails.title,
+            artists: releaseDetails.artists
+              .map((a: any) => a.name)
+              .join(', '),
+            year: releaseDetails.year,
+            genres: releaseDetails.genres.join(', '),
+            styles: releaseDetails.styles.join(', '),
+            addedAt: new Date(),
+          };
+          await this.db.addRelease(storedRelease);
+
+          // Store the tracklist for later use
+          if (releaseDetails.tracklist && Array.isArray(releaseDetails.tracklist)) {
+            await this.db.addTracks(releaseDetails.id, releaseDetails.tracklist);
+          }
+
+          processedCount++;
+        } catch (error) {
+          failedCount++;
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          Logger.warn(`Failed to fetch release ${releaseId}: ${errorMsg}`);
+
+          // Check if it's a 404 (not found) - don't retry permanently missing items
+          if (error instanceof DiscogsAPIClientError && error.statusCode === 404) {
+            await this.db.moveToDLQ(releaseId, username, `404 Not Found: ${errorMsg}`);
+            Logger.info(`Moved release ${releaseId} to DLQ (404)`);
+          } else {
+            // For other errors, add to retry queue
+            await this.db.addToRetryQueue(releaseId, username, errorMsg);
+            Logger.info(`Queued release ${releaseId} for retry`);
+          }
+        }
+      }
+
+      onProgress({
+        stage: 'Sync complete',
+        current: releaseIds.length,
+        total: releaseIds.length,
+        message: `Synced ${processedCount}/${releaseIds.length} releases. ${skippedCount} skipped (already in DB). ${failedCount} failures queued for retry.`,
+      });
+
+      return processedCount;
+    } catch (error) {
+      throw new Error(`Failed to sync specific releases: ${error}`);
     }
   }
 
