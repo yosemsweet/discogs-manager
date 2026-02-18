@@ -1,16 +1,36 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import axiosRetry from 'axios-retry';
 import { Logger } from '../utils/logger';
+import { ErrorHandler, AppError, ErrorContext } from '../utils/error-handler';
 
-export class DiscogsAPIClientError extends Error {
+/**
+ * @deprecated Use AppError from error-handler.ts instead
+ * Kept for backwards compatibility with existing code
+ */
+export class DiscogsAPIClientError extends AppError {
   constructor(
-    public statusCode?: number,
-    public originalError?: any,
+    statusCode?: number,
+    originalError?: any,
     message?: string,
     public rateLimitResetTime?: Date
   ) {
-    super(message || 'Discogs API Error');
+    // Map to appropriate error type based on status code
+    const errorType = ErrorHandler['parseAxiosError'](
+      {
+        response: { status: statusCode },
+      } as any,
+      { operation: 'DiscogsAPI' }
+    ).type;
+
+    super(
+      errorType,
+      message || 'Discogs API Error',
+      statusCode,
+      originalError,
+      { operation: 'DiscogsAPI' }
+    );
     this.name = 'DiscogsAPIClientError';
+    Object.setPrototypeOf(this, DiscogsAPIClientError.prototype);
   }
 }
 
@@ -132,58 +152,42 @@ export class DiscogsAPIClient {
     return result;
   }
 
-  private handleError(error: any, context: string): never {
-    const axiosError = error as AxiosError;
+  private handleError(error: any, operation: string): never {
+    // Create error context for consistent error tracking
+    const context: ErrorContext = {
+      operation,
+      details: {
+        statusCode: error.response?.status,
+        headers: error.response?.headers,
+        data: error.response?.data,
+      },
+    };
 
-    if (axiosError.response) {
-      const status = axiosError.response.status;
-      const data = axiosError.response.data as any;
-      const rateLimitInfo = this.extractRateLimitInfo(axiosError);
+    // Use centralized error handler to parse and log the error
+    const appError = ErrorHandler.parse(error, context);
+    
+    // Determine log severity based on whether error is retryable
+    const severity = appError.isRetryable() ? 'warn' : 'error';
+    ErrorHandler.log(appError, severity);
 
-      switch (status) {
-        case 401:
-          throw new DiscogsAPIClientError(401, error, `Authentication failed: ${context}. Invalid token or username.`);
-        case 404:
-          throw new DiscogsAPIClientError(404, error, `Not found: ${context}. The requested resource does not exist.`);
-        case 429:
-          // Log comprehensive rate limit information
-          const resetTimeStr = rateLimitInfo.resetTime?.toISOString() ?? 'unknown';
-          const remainingStr = rateLimitInfo.remaining?.toString() ?? 'unknown';
-          Logger.error(
-            `Rate limit exceeded for: ${context}\n` +
-            `  Reset Time: ${resetTimeStr}\n` +
-            `  Requests Remaining: ${remainingStr}\n` +
-            `  All Headers: ${JSON.stringify(axiosError.response?.headers, null, 2)}`
-          );
-          throw new DiscogsAPIClientError(
-            429,
-            error,
-            `Rate limit exceeded: ${context}. Please try again later.${
-              rateLimitInfo.resetTime ? ` Reset at: ${rateLimitInfo.resetTime.toISOString()}` : ''
-            }`,
-            rateLimitInfo.resetTime
-          );
-        case 500:
-        case 502:
-        case 503:
-          throw new DiscogsAPIClientError(status, error, `Server error (${status}): ${context}. Please try again later.`);
-        default:
-          throw new DiscogsAPIClientError(status, error, `API error (${status}): ${context}. ${data?.message || ''}`);
+    // Extract rate limit info for backward compatibility
+    if (error.response?.headers) {
+      const resetTimestamp =
+        error.response.headers['x-discogs-ratelimit-reset'] ||
+        error.response.headers['x-ratelimit-reset'];
+      if (resetTimestamp) {
+        const rateLimitResetTime = new Date(parseInt(resetTimestamp) * 1000);
+        if (appError instanceof DiscogsAPIClientError) {
+          appError.rateLimitResetTime = rateLimitResetTime;
+        }
       }
     }
 
-    if (axiosError.code === 'ECONNABORTED') {
-      throw new DiscogsAPIClientError(undefined, error, `Request timeout: ${context}. The server took too long to respond.`);
-    }
-
-    if (axiosError.code === 'ENOTFOUND') {
-      throw new DiscogsAPIClientError(undefined, error, `Network error: ${context}. Unable to reach the Discogs API.`);
-    }
-
-    throw new DiscogsAPIClientError(undefined, error, `Unexpected error in ${context}: ${error.message}`);
+    throw appError;
   }
 
   async getCollection(username: string = this.username, page: number = 1) {
+    const operation = `getCollection(${username}, page ${page})`;
     try {
       if (!username || typeof username !== 'string') {
         throw new Error('Invalid username provided');
@@ -202,7 +206,7 @@ export class DiscogsAPIClient {
       await this.throttleIfNeeded(response.headers);
       return response.data;
     } catch (error) {
-      this.handleError(error, `getCollection(${username}, page ${page})`);
+      this.handleError(error, operation);
     }
   }
 

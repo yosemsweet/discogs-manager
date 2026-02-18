@@ -6,6 +6,7 @@
 import axios from 'axios';
 import crypto from 'crypto';
 import { Logger } from '../utils/logger';
+import { ErrorHandler, ErrorType } from '../utils/error-handler';
 
 export interface OAuthToken {
   access_token: string;

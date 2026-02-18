@@ -3,6 +3,7 @@ import { DatabaseManager } from './database';
 import { DiscogsRelease, PlaylistFilter, StoredRelease } from '../types';
 import { ProgressCallback, noopProgress } from '../utils/progress';
 import { Logger } from '../utils/logger';
+import { ErrorHandler, AppError, ErrorType } from '../utils/error-handler';
 
 export class CollectionService {
   private discogsClient: DiscogsAPIClient;

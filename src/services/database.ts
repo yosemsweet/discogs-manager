@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import { StoredRelease } from '../types';
+import { ErrorHandler, ErrorType } from '../utils/error-handler';
 
 export class DatabaseManager {
   private db: Database.Database;

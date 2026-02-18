@@ -3,6 +3,7 @@ import { SoundCloudRateLimitService } from './soundcloud-rate-limit';
 import { DatabaseManager } from './database';
 import { StoredRelease } from '../types';
 import { ProgressCallback, noopProgress } from '../utils/progress';
+import { ErrorHandler, AppError, ErrorType } from '../utils/error-handler';
 
 export class PlaylistService {
   private soundcloudClient: SoundCloudAPIClient;

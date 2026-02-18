@@ -1,5 +1,6 @@
 import { Logger } from '../utils/logger';
 import { DatabaseManager } from './database';
+import { ErrorHandler, ErrorType } from '../utils/error-handler';
 
 export interface SoundCloudRateLimitState {
   remaining: number;

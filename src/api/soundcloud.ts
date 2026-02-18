@@ -1,18 +1,42 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { SoundCloudRateLimitService } from '../services/soundcloud-rate-limit';
 import { Logger } from '../utils/logger';
+import { ErrorHandler, AppError, ErrorContext } from '../utils/error-handler';
 
-export class SoundCloudAPIClientError extends Error {
+/**
+ * @deprecated Use AppError from error-handler.ts instead
+ * Kept for backwards compatibility with existing code
+ */
+export class SoundCloudAPIClientError extends AppError {
   constructor(
-    public statusCode?: number,
-    public originalError?: any,
+    statusCode?: number,
+    originalError?: any,
     message?: string
   ) {
-    super(message || 'SoundCloud API Error');
+    // Map to appropriate error type based on status code
+    const errorType = ErrorHandler['parseAxiosError'](
+      {
+        response: { status: statusCode },
+      } as any,
+      { operation: 'SoundCloudAPI' }
+    ).type;
+
+    super(
+      errorType,
+      message || 'SoundCloud API Error',
+      statusCode,
+      originalError,
+      { operation: 'SoundCloudAPI' }
+    );
     this.name = 'SoundCloudAPIClientError';
+    Object.setPrototypeOf(this, SoundCloudAPIClientError.prototype);
   }
 }
 
+/**
+ * @deprecated Use AppError with type: ErrorType.RateLimit instead
+ * Kept for backwards compatibility with existing code
+ */
 export class SoundCloudRateLimitError extends SoundCloudAPIClientError {
   constructor(
     public remainingRequests: number,
@@ -26,6 +50,7 @@ export class SoundCloudRateLimitError extends SoundCloudAPIClientError {
       message || `Rate limit exceeded. ${remainingRequests} requests remaining. Reset at ${resetTime}`
     );
     this.name = 'SoundCloudRateLimitError';
+    Object.setPrototypeOf(this, SoundCloudRateLimitError.prototype);
   }
 }
 
@@ -49,50 +74,35 @@ export class SoundCloudAPIClient {
     });
   }
 
-  private handleError(error: any, context: string): never {
-    const axiosError = error as AxiosError;
+  private handleError(error: any, operation: string): never {
+    // Create error context for consistent error tracking
+    const context: ErrorContext = {
+      operation,
+      details: {
+        statusCode: error.response?.status,
+        headers: error.response?.headers,
+        data: error.response?.data,
+      },
+    };
 
-    if (axiosError.response) {
-      const status = axiosError.response.status;
-      const data = axiosError.response.data as any;
+    // Use centralized error handler to parse and log the error
+    const appError = ErrorHandler.parse(error, context);
 
-      switch (status) {
-        case 400:
-          throw new SoundCloudAPIClientError(400, error, `Bad request in ${context}: ${data?.error_description || 'Invalid parameters'}`);
-        case 401:
-        case 403:
-          throw new SoundCloudAPIClientError(status, error, `Authentication failed in ${context}: Invalid or expired credentials`);
-        case 404:
-          throw new SoundCloudAPIClientError(404, error, `Not found in ${context}: The requested resource does not exist`);
-        case 429:
-          // Parse rate limit information from response
-          const rateLimitInfo = this.parseRateLimitResponse(data);
-          throw new SoundCloudRateLimitError(
-            rateLimitInfo.remainingRequests,
-            rateLimitInfo.resetTime,
-            rateLimitInfo.maxRequests,
-            `Rate limit exceeded in ${context}: ${rateLimitInfo.remainingRequests} requests remaining. Reset at ${rateLimitInfo.resetTime}`
-          );
-        case 422:
-          throw new SoundCloudAPIClientError(422, error, `Unprocessable entity in ${context}: ${data?.error_description || 'Request validation failed. This often occurs when the batch size is too large (try splitting into smaller batches).'}`);
-        case 500:
-        case 502:
-        case 503:
-          throw new SoundCloudAPIClientError(status, error, `Server error (${status}) in ${context}: Please try again later`);
-        default:
-          throw new SoundCloudAPIClientError(status, error, `API error (${status}) in ${context}: ${data?.error_description || ''}`);
+    // For rate limit errors, extract and preserve SoundCloud-specific info
+    if (appError.statusCode === 429 && error.response?.data) {
+      const rateLimitInfo = this.parseRateLimitResponse(error.response.data);
+      if (appError instanceof SoundCloudRateLimitError) {
+        appError.remainingRequests = rateLimitInfo.remainingRequests;
+        appError.resetTime = rateLimitInfo.resetTime;
+        appError.maxRequests = rateLimitInfo.maxRequests;
       }
     }
 
-    if (axiosError.code === 'ECONNABORTED') {
-      throw new SoundCloudAPIClientError(undefined, error, `Request timeout in ${context}: The server took too long to respond`);
-    }
+    // Determine log severity based on whether error is retryable
+    const severity = appError.isRetryable() ? 'warn' : 'error';
+    ErrorHandler.log(appError, severity);
 
-    if (axiosError.code === 'ENOTFOUND') {
-      throw new SoundCloudAPIClientError(undefined, error, `Network error in ${context}: Unable to reach the SoundCloud API`);
-    }
-
-    throw new SoundCloudAPIClientError(undefined, error, `Unexpected error in ${context}: ${error.message}`);
+    throw appError;
   }
 
   /**
