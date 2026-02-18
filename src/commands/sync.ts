@@ -3,6 +3,7 @@ import { DiscogsAPIClient } from '../api/discogs';
 import { DatabaseManager } from '../services/database';
 import { CollectionService } from '../services/collection';
 import { CommandBuilder } from '../utils/command-builder';
+import { Validator, ValidationError } from '../utils/validator';
 
 export function createSyncCommand(discogsClient: DiscogsAPIClient, db: DatabaseManager) {
   const cmd = new Command('sync')
@@ -16,23 +17,19 @@ export function createSyncCommand(discogsClient: DiscogsAPIClient, db: DatabaseM
     const spinner = CommandBuilder.createSpinner();
 
     try {
+      // Validate options
+      const validated = Validator.validateSyncOptions(options);
+
       const collectionService = new CollectionService(discogsClient, db);
-      const username = options.username || process.env.DISCOGS_USERNAME;
-
-      if (!username) {
-        throw new Error('Username not provided. Use --username or set DISCOGS_USERNAME');
-      }
-
       const progressCallback = CommandBuilder.createProgressCallback(spinner);
 
       let count;
-      if (options.releaseIds) {
+      if (validated.releaseIds) {
         // Sync specific releases
-        const releaseIds = options.releaseIds.split(',').map((id: string) => parseInt(id.trim()));
-        count = await collectionService.syncSpecificReleases(username, releaseIds, progressCallback, options.force);
+        count = await collectionService.syncSpecificReleases(validated.username, validated.releaseIds, progressCallback, validated.force);
       } else {
         // Sync entire collection
-        count = await collectionService.syncCollection(username, progressCallback, options.force);
+        count = await collectionService.syncCollection(validated.username, progressCallback, validated.force);
       }
 
       spinner.succeed(CommandBuilder.formatSuccess(`Successfully synced ${count} releases`));

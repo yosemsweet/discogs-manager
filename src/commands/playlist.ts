@@ -8,6 +8,7 @@ import { CollectionService } from '../services/collection';
 import { DiscogsAPIClient } from '../api/discogs';
 import { PlaylistFilter } from '../types';
 import { CommandBuilder } from '../utils/command-builder';
+import { Validator, ValidationError } from '../utils/validator';
 
 export function createPlaylistCommand(
   discogsClient: DiscogsAPIClient,
@@ -28,9 +29,8 @@ export function createPlaylistCommand(
     const spinner = CommandBuilder.createSpinner();
 
     try {
-      if (!options.title) {
-        throw new Error('Title is required');
-      }
+      // Validate options
+      const validated = Validator.validatePlaylistOptions(options);
 
       spinner.text = 'Checking SoundCloud rate limits...';
       const rateLimitService = new SoundCloudRateLimitService(db);
@@ -43,19 +43,12 @@ export function createPlaylistCommand(
       let releases;
 
       // If release IDs are provided, use those specific releases
-      if (options.releaseIds) {
+      if (validated.releaseIds) {
         spinner.text = 'Fetching specified releases...';
-        const releaseIds = options.releaseIds.split(',').map((id: string) => parseInt(id.trim()));
-        releases = await Promise.all(releaseIds.map((id: number) => db.getReleaseByDiscogsId(id)));
+        releases = await Promise.all(validated.releaseIds.map((id: number) => db.getReleaseByDiscogsId(id)));
         releases = releases.filter((r) => r !== null);
       } else {
-        const filter: PlaylistFilter = {
-          genres: options.genres ? options.genres.split(',').map((g: string) => g.trim()) : undefined,
-          minYear: options.minYear ? parseInt(options.minYear) : undefined,
-          maxYear: options.maxYear ? parseInt(options.maxYear) : undefined,
-        };
-
-        releases = await collectionService.filterReleases(filter, progressCallback);
+        releases = await collectionService.filterReleases(validated.filter, progressCallback);
       }
 
       if (releases.length === 0) {
@@ -63,9 +56,9 @@ export function createPlaylistCommand(
       }
 
       const playlist = await playlistService.createPlaylist(
-        options.title,
+        validated.title,
         releases,
-        options.description,
+        validated.description,
         progressCallback
       );
 

@@ -4,6 +4,7 @@ import { DatabaseManager } from '../services/database';
 import { CollectionService } from '../services/collection';
 import { DiscogsAPIClient } from '../api/discogs';
 import { CommandBuilder } from '../utils/command-builder';
+import { Validator, ValidationError } from '../utils/validator';
 
 export function createStatsCommand(discogsClient: DiscogsAPIClient, db: DatabaseManager) {
   const cmd = new Command('stats')
@@ -16,10 +17,10 @@ export function createStatsCommand(discogsClient: DiscogsAPIClient, db: Database
     spinner.text = 'Calculating statistics...';
 
     try {
-      const usernameToUse = username || process.env.DISCOGS_USERNAME;
-      if (!usernameToUse) {
-        throw new Error('Username not provided. Use argument or set DISCOGS_USERNAME');
-      }
+      // Validate options
+      const validated = Validator.validateStatsOptions({
+        username: username,
+      });
 
       const collectionService = new CollectionService(discogsClient, db);
 

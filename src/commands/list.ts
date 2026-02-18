@@ -4,6 +4,7 @@ import { DatabaseManager } from '../services/database';
 import { CollectionService } from '../services/collection';
 import { DiscogsAPIClient } from '../api/discogs';
 import { CommandBuilder } from '../utils/command-builder';
+import { Validator, ValidationError } from '../utils/validator';
 
 export function createListCommand(discogsClient: DiscogsAPIClient, db: DatabaseManager) {
   const cmd = new Command('list')
@@ -21,45 +22,24 @@ export function createListCommand(discogsClient: DiscogsAPIClient, db: DatabaseM
     const spinner = CommandBuilder.createSpinner();
 
     try {
-      const usernameToUse = username || process.env.DISCOGS_USERNAME;
-      if (!usernameToUse) {
-        throw new Error('Username not provided. Use argument or set DISCOGS_USERNAME');
-      }
+      // Validate options
+      const validated = Validator.validateListOptions({
+        username: username,
+        limit: options.limit,
+        genres: options.genres,
+        minYear: options.minYear,
+        maxYear: options.maxYear,
+        minRating: options.minRating,
+        maxRating: options.maxRating,
+        styles: options.styles,
+      });
 
       const collectionService = new CollectionService(discogsClient, db);
       const progressCallback = CommandBuilder.createProgressCallback(spinner);
 
-      // Build filter from options
-      const filter: any = {};
+      let releases = await collectionService.filterReleases(validated.filter, progressCallback);
 
-      if (options.genres) {
-        filter.genres = options.genres.split(',').map((g: string) => g.trim());
-      }
-
-      if (options.minYear) {
-        filter.minYear = parseInt(options.minYear);
-      }
-
-      if (options.maxYear) {
-        filter.maxYear = parseInt(options.maxYear);
-      }
-
-      if (options.minRating) {
-        filter.minRating = parseFloat(options.minRating);
-      }
-
-      if (options.maxRating) {
-        filter.maxRating = parseFloat(options.maxRating);
-      }
-
-      if (options.styles) {
-        filter.styles = options.styles.split(',').map((s: string) => s.trim());
-      }
-
-      let releases = await collectionService.filterReleases(filter, progressCallback);
-
-      const limit = parseInt(options.limit);
-      releases = releases.slice(0, limit);
+      releases = releases.slice(0, validated.limit);
 
       if (releases.length === 0) {
         spinner.warn(CommandBuilder.formatWarning('No releases found matching criteria'));
