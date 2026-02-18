@@ -18,21 +18,20 @@ Core CLI, Discogs API integration, SoundCloud OAuth 2.1, rate limiting, database
 - **Task 2:** Refactored 6 commands with CommandBuilder utility (-180 boilerplate lines)
 - **Task 3:** Created ErrorHandler with centralized error classification (13 error types)
 
----
-
-## Future Work - Prioritized by Impact
-
-### Phase 2: Services & Validation (WEEKS 3-4) - NEXT
+### Phase 2: Services & Validation - IN PROGRESS
 
 **Priority 1: Enable TypeScript Strict Mode** ⭐
 - Effort: 4-6h | Impact: HIGH
 - Enable `strict: true` in tsconfig.json, fix `any` types across codebase
 
-**Priority 2: Refactor PlaylistService** ⭐
+**Priority 2: Refactor PlaylistService** ✅ COMPLETE
 - Effort: 6-8h | Impact: HIGH
-- Extract TrackSearchService, PlaylistBatchManager; split concerns (currently ~300 lines)
+- Created TrackSearchService (89 lines) - track searching with rate limiting
+- Created PlaylistBatchManager (86 lines) - batch API operations with smart chunking
+- Refactored PlaylistService (305 → 175 lines, -43% reduction)
+- All 125 tests passing, no behavioral changes
 
-**Priority 3: Add Input Validation Layer**
+**Priority 3: Add Input Validation Layer** ⭐ NEXT
 - Effort: 4-5h | Impact: MEDIUM
 - Create Validator utility with schema validation; validate commands, API responses
 
