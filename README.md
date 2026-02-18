@@ -79,17 +79,51 @@ DISCOGS_USERNAME=yosemsweet
 
 Only needed if you want to create SoundCloud playlists.
 
-**To get SoundCloud credentials:**
+#### 3a. Create SoundCloud Application
 
-1. Register your application at [soundcloud.com/you/apps](https://soundcloud.com/you/apps)
-2. Create a new app to get your `client_id`
-3. For user token, authenticate via OAuth 2.1 (see [SOUNDCLOUD_OAUTH_SETUP.md](./SOUNDCLOUD_OAUTH_SETUP.md) for detailed instructions)
-4. Add to `.env`:
+1. Go to [soundcloud.com/you/apps](https://soundcloud.com/you/apps)
+2. Click "Register a new app"
+3. Fill in the app details:
+   - **App Name:** e.g., "Discogs Manager"
+   - **App Website:** e.g., "https://github.com/yourusername/discogs-manager"
+   - Accept the terms and click "Register"
+4. Copy your **Client ID** from the app details page
+5. Add to `.env`:
 
 ```env
 SOUNDCLOUD_CLIENT_ID=your_client_id_here
-SOUNDCLOUD_USER_TOKEN=your_user_token_here
 ```
+
+#### 3b. Authenticate with SoundCloud (Get User Token)
+
+The CLI includes an OAuth 2.1 authentication command:
+
+```bash
+npm run dev -- auth
+```
+
+**What happens:**
+1. Opens your browser to SoundCloud's OAuth authorization page
+2. You'll be prompted to grant the app access to your SoundCloud account
+3. After authorizing, you'll be redirected with an authorization code
+4. The CLI automatically exchanges this for a user token
+5. Your token is saved to `.env` as `SOUNDCLOUD_USER_TOKEN`
+
+**If it doesn't open automatically:**
+1. Check the terminal for the authorization URL
+2. Copy it and open in your browser manually
+3. Grant access when prompted
+4. The token will be saved automatically
+
+#### 3c. Verify SoundCloud Credentials
+
+Once you've run the auth command, verify it worked:
+
+```bash
+npm run dev -- playlist --title "Test Playlist" --genres "Rock"
+```
+
+If successful, a playlist will be created on your SoundCloud account.
 
 ### Step 4: Verify Configuration
 
@@ -184,6 +218,41 @@ npm run dev -- sync --force
 ---
 
 ## Commands
+
+### `auth` - Authenticate with SoundCloud
+
+Authenticate with SoundCloud using OAuth 2.1 to enable playlist creation.
+
+**Syntax:**
+```bash
+npm run dev -- auth
+```
+
+**What It Does:**
+1. Opens your default browser to SoundCloud's OAuth authorization page
+2. You grant the app permission to access your SoundCloud account
+3. After authorization, you're redirected with a code
+4. The CLI exchanges this code for a user token
+5. Token is automatically saved to `.env` as `SOUNDCLOUD_USER_TOKEN`
+
+**Example:**
+```bash
+npm run dev -- auth
+```
+
+**Output:**
+```
+[INFO] Opening SoundCloud authorization page...
+[INFO] Waiting for authorization...
+[INFO] ✓ Successfully authenticated! Token saved to .env
+```
+
+**Troubleshooting:**
+- If browser doesn't open, check the terminal for the authorization URL and open it manually
+- Make sure you have a SoundCloud account and have registered an app
+- Your `SOUNDCLOUD_CLIENT_ID` must be set in `.env` before running this command
+
+---
 
 ### `sync` - Synchronize Your Collection
 
