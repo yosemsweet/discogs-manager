@@ -1,6 +1,44 @@
 # Discogs Manager CLI - Development Plan
 
-## Current Session: Add Support for More Than 50 Tracks in Playlists
+## Current Session: Fetch Full Tracklists from Discogs for Multi-Track Playlists
+
+### Problem Identified:
+System was only getting ONE track per Discogs release, limiting playlists to 50 tracks maximum (if syncing 50 records). Each record can have 10+ tracks, but we weren't fetching them.
+
+### Solution Implemented:
+1. **Database Tracklist Caching** ✅
+   - Added `tracks` table to store release tracklists (title, artists, position, duration)
+   - Unique constraint on (releaseId, position) to prevent duplicates
+   
+2. **Collection Sync Enhancement** ✅
+   - CollectionService now stores the full tracklist when syncing each release
+   - Tracklist fetched from Discogs `/releases/{id}` endpoint (same call as before)
+   - Stores in database for reuse during playlist creation
+   
+3. **Playlist Creation Refactoring** ✅
+   - PlaylistService now queries database for cached tracks instead of calling Discogs API again
+   - For each release, fetches all tracks from database
+   - Searches SoundCloud for EACH individual track (not just one per album)
+   - Can now create playlists with 100+ tracks per album
+   
+4. **Database Fixes** ✅
+   - Enabled `foreign_keys` pragma in SQLite to prevent constraint violations
+   - Clarified messaging to show "individual tracks" from multiple releases
+
+### Current Status:
+✅ Playlists are being created with multiple tracks per release
+⚠️ Playlist creation is **inconsistent** - got 422 error for "My Folk Collection"
+   - Jazz playlists worked
+   - Folk playlists failed with 422 (Unprocessable Entity)
+   - Suggests issue with certain track data or SoundCloud API constraints
+
+### Next Steps:
+- Investigate 422 error - likely invalid track IDs or malformed requests
+- Check if certain genres/artists cause issues
+- May need to validate track IDs before sending to SoundCloud
+- Could be rate limiting or data validation issue
+
+## Previous Session: Add Support for More Than 50 Tracks in Playlists
 
 The system currently seems limited to 50 tracks per playlist. This could be:
 1. SoundCloud API batch size limit
