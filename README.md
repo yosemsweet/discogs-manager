@@ -23,63 +23,165 @@ A powerful command-line interface for managing your Discogs music collection and
 - **Discogs API Token**: Get one from [discogs.com/settings/developers](https://www.discogs.com/settings/developers)
 - **SoundCloud API Credentials** (Optional): Only needed for playlist creation features
 
-## Quick Start
+## Installation
 
-### 1. Installation
+### Step 1: Clone the Repository
 
 ```bash
-# Clone or navigate to the project
 git clone https://github.com/yourusername/discogs-manager.git
 cd discogs-manager
+```
 
-# Install dependencies
+### Step 2: Install Dependencies
+
+```bash
 npm install
 ```
 
-### 2. Configuration
-
-Create a `.env` file from the template:
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` with your credentials:
-
-```env
-# Required
-DISCOGS_API_TOKEN=your_token_from_https://www.discogs.com/settings/developers
-DISCOGS_USERNAME=your_discogs_username
-
-# Optional (for playlist creation)
-SOUNDCLOUD_CLIENT_ID=your_soundcloud_client_id
-SOUNDCLOUD_USER_TOKEN=your_soundcloud_user_token
-
-# Optional (default: ./data/discogs-manager.db)
-DB_PATH=./data/discogs-manager.db
-```
-
-### 3. Build
+### Step 3: Verify Installation
 
 ```bash
 npm run build
 ```
 
-### 4. Run Commands
+You should see a clean TypeScript compilation with no errors.
+
+---
+
+## Configuration
+
+### Step 1: Create Environment File
 
 ```bash
-# Sync your collection
-npm run dev -- sync yosemsweet
-
-# View your collection stats
-npm run dev -- stats yosemsweet
-
-# List releases
-npm run dev -- list yosemsweet
-
-# Create a playlist
-npm run dev -- playlist yosemsweet --title "My Playlist" --genres "Rock"
+cp .env.example .env
 ```
+
+### Step 2: Set Up Discogs API
+
+**Get your Discogs API Token:**
+
+1. Go to [discogs.com/settings/developers](https://www.discogs.com/settings/developers)
+2. Generate a new personal access token
+3. Copy the token and add it to `.env`:
+
+```env
+DISCOGS_API_TOKEN=your_token_here
+DISCOGS_USERNAME=your_username_here
+```
+
+**Example:**
+```env
+DISCOGS_API_TOKEN=mytoken123456789abcdef
+DISCOGS_USERNAME=yosemsweet
+```
+
+### Step 3: Set Up SoundCloud API (Optional)
+
+Only needed if you want to create SoundCloud playlists.
+
+**To get SoundCloud credentials:**
+
+1. Register your application at [soundcloud.com/you/apps](https://soundcloud.com/you/apps)
+2. Create a new app to get your `client_id`
+3. For user token, authenticate via OAuth 2.1 (see [SOUNDCLOUD_OAUTH_SETUP.md](./SOUNDCLOUD_OAUTH_SETUP.md) for detailed instructions)
+4. Add to `.env`:
+
+```env
+SOUNDCLOUD_CLIENT_ID=your_client_id_here
+SOUNDCLOUD_USER_TOKEN=your_user_token_here
+```
+
+### Step 4: Verify Configuration
+
+Test your setup:
+
+```bash
+npm run dev -- stats
+```
+
+You should see your collection statistics. If you get an error, check:
+- `.env` file exists and has correct values
+- `DISCOGS_API_TOKEN` is valid and not expired
+- `DISCOGS_USERNAME` matches your Discogs username
+
+---
+
+## Quick Start: First Run
+
+Once configured, here's how to get started:
+
+```bash
+# 1. Sync your collection from Discogs (one-time setup)
+npm run dev -- sync
+
+# 2. View statistics about your collection
+npm run dev -- stats
+
+# 3. List your releases
+npm run dev -- list
+
+# 4. Create a playlist on SoundCloud (requires SoundCloud setup)
+npm run dev -- playlist --title "My First Playlist" --genres "Rock"
+```
+
+Each command shows helpful error messages if anything is misconfigured.
+
+## Usage Guide
+
+### Common Workflows
+
+#### Workflow 1: Initial Setup and Sync
+
+```bash
+# Step 1: Sync your entire collection (takes a few minutes)
+npm run dev -- sync
+
+# Step 2: Check what was synced
+npm run dev -- stats
+```
+
+#### Workflow 2: Browse Your Collection
+
+```bash
+# View all releases (paginated)
+npm run dev -- list
+
+# Filter by genre
+npm run dev -- list --genres "Rock,Jazz"
+
+# Filter by year
+npm run dev -- list --min-year 1970 --max-year 1989
+
+# Combine filters
+npm run dev -- list --genres "Electronic" --min-year 2000 --min-rating 4
+```
+
+#### Workflow 3: Create a Playlist
+
+```bash
+# Create a simple playlist
+npm run dev -- playlist --title "Rock Classics" --genres "Rock"
+
+# Create a curated playlist
+npm run dev -- playlist \
+  --title "80s Best" \
+  --min-year 1980 \
+  --max-year 1989 \
+  --min-rating 4 \
+  --description "The best albums from the 1980s"
+```
+
+#### Workflow 4: Update Your Collection
+
+```bash
+# Regular update (adds new releases, skips existing ones)
+npm run dev -- sync
+
+# Force refresh all releases (slower but updates everything)
+npm run dev -- sync --force
+```
+
+---
 
 ## Commands
 
@@ -89,26 +191,28 @@ Fetches all releases from your Discogs collection and stores them locally in SQL
 
 **Syntax:**
 ```bash
-npm run dev sync <username> [options]
+npm run dev -- sync [username] [options]
 ```
 
+**Arguments:**
+- `[username]` - Discogs username (optional, uses `DISCOGS_USERNAME` from `.env` if not provided)
+
 **Options:**
-- `<username>` - Discogs username to sync (required)
 - `-f, --force` - Force refresh all releases from API (skip database cache)
 
 **Examples:**
 ```bash
-# Initial sync (fetches all releases)
-npm run dev -- sync yosemsweet
+# Sync using username from .env (recommended)
+npm run dev -- sync
 
-# Sync again (skips existing releases, only fetches new ones)
+# Sync specific username
 npm run dev -- sync yosemsweet
 
 # Force refresh all releases
-npm run dev -- sync yosemsweet --force
+npm run dev -- sync --force
 
-# Use DISCOGS_USERNAME from .env
-npm run dev -- sync
+# Force refresh for specific user
+npm run dev -- sync yosemsweet --force
 ```
 
 **What Happens:**
@@ -132,11 +236,13 @@ Display releases from your collection with optional filtering.
 
 **Syntax:**
 ```bash
-npm run dev list <username> [options]
+npm run dev -- list [username] [options]
 ```
 
+**Arguments:**
+- `[username]` - Discogs username (optional, uses `DISCOGS_USERNAME` from `.env` if not provided)
+
 **Options:**
-- `<username>` - Discogs username (required)
 - `-g, --genres <genres>` - Filter by genres (comma-separated), e.g., "Rock,Jazz"
 - `--min-year <year>` - Minimum release year (inclusive)
 - `--max-year <year>` - Maximum release year (inclusive)
@@ -146,23 +252,23 @@ npm run dev list <username> [options]
 
 **Examples:**
 ```bash
-# List all releases (first 50)
-npm run dev -- list yosemsweet
+# List all releases
+npm run dev -- list
 
 # List rock releases
-npm run dev -- list yosemsweet --genres "Rock"
+npm run dev -- list --genres "Rock"
 
 # List releases from 1970-1989
-npm run dev -- list yosemsweet --min-year 1970 --max-year 1989
+npm run dev -- list --min-year 1970 --max-year 1989
 
 # List releases from 1980s with high ratings
-npm run dev -- list yosemsweet --min-year 1980 --max-year 1989 --min-rating 4
+npm run dev -- list --min-year 1980 --max-year 1989 --min-rating 4
 
 # Combine multiple filters
-npm run dev -- list yosemsweet --genres "Rock,Alternative" --min-year 2000
+npm run dev -- list --genres "Rock,Alternative" --min-year 2000
 
 # View albums by style
-npm run dev -- list yosemsweet --styles "Electronic,Ambient"
+npm run dev -- list --styles "Electronic,Ambient"
 ```
 
 **Output Format:**
@@ -184,16 +290,21 @@ Display comprehensive statistics about your collection.
 npm run dev -- stats [username] [options]
 ```
 
+**Arguments:**
+- `[username]` - Discogs username (optional, uses `DISCOGS_USERNAME` from `.env` if not provided)
+
 **Options:**
-- `[username]` - Discogs username (optional, uses env if not provided)
 - `-v, --verbose` - Show detailed stats including style breakdown
 
 **Examples:**
 ```bash
 # Show collection statistics
-npm run dev -- stats yosemsweet
+npm run dev -- stats
 
 # Show statistics with style breakdown
+npm run dev -- stats --verbose
+
+# Show stats for specific user
 npm run dev -- stats yosemsweet --verbose
 ```
 
@@ -241,13 +352,16 @@ Process the retry queue and view the dead letter queue (DLQ) for permanently fai
 
 **Syntax:**
 ```bash
-npm run dev retry <username>
+npm run dev -- retry [username]
 ```
+
+**Arguments:**
+- `[username]` - Discogs username (optional, uses `DISCOGS_USERNAME` from `.env` if not provided)
 
 **Examples:**
 ```bash
 # Retry failed releases
-npm run dev -- retry yosemsweet
+npm run dev -- retry
 
 # Check which releases are in the DLQ
 npm run dev -- retry yosemsweet
@@ -274,13 +388,15 @@ Create SoundCloud playlists from filtered subsets of your collection.
 
 **Syntax:**
 ```bash
-npm run dev playlist <username> [options]
+npm run dev -- playlist [username] --title <title> [options]
 ```
 
+**Arguments:**
+- `[username]` - Discogs username (optional, uses `DISCOGS_USERNAME` from `.env` if not provided)
+
 **Options:**
-- `<username>` - Discogs username (required)
 - `-t, --title <title>` - Playlist title (required)
-- `-d, --description <description>` - Playlist description
+- `-d, --description <description>` - Playlist description (optional)
 - `-g, --genres <genres>` - Filter by genres (comma-separated)
 - `--min-year <year>` - Minimum release year
 - `--max-year <year>` - Maximum release year
@@ -291,22 +407,24 @@ npm run dev playlist <username> [options]
 **Examples:**
 ```bash
 # Create a Rock playlist
-npm run dev -- playlist yosemsweet --title "Rock Classics" --genres "Rock"
+npm run dev -- playlist --title "Rock Classics" --genres "Rock"
 
-# Create a 1980s playlist
-npm run dev -- playlist yosemsweet --title "80s Hits" --min-year 1980 --max-year 1989 \
-  --description "The best from the 1980s"
+# Create a 1980s playlist with description
+npm run dev -- playlist --title "80s Hits" --min-year 1980 --max-year 1989 \
+  --description "The best albums from the 1980s"
 
 # Create a high-rated Jazz playlist
-npm run dev -- playlist yosemsweet --title "Jazz Favorites" --genres "Jazz" --min-rating 4
+npm run dev -- playlist --title "Jazz Favorites" --genres "Jazz" --min-rating 4
 
 # Complex filtering: Electronic music from 2000+ with high ratings
-npm run dev -- playlist yosemsweet --title "Modern Electronic" --genres "Electronic" \
+npm run dev -- playlist --title "Modern Electronic" --genres "Electronic" \
   --min-year 2000 --min-rating 3 --description "Contemporary electronic music"
 
 # Create by style
-npm run dev -- playlist yosemsweet --title "Funk & Soul" --styles "Funk,Soul"
+npm run dev -- playlist --title "Funk & Soul" --styles "Funk,Soul"
 ```
+
+**Note:** Requires SoundCloud API credentials in `.env` file (see [Configuration](#configuration) section).
 
 ---
 
@@ -459,7 +577,7 @@ npm test collection
 npm test -- --coverage
 ```
 
-**Current Status:** 93 tests passing ✅
+**Current Status:** 195 tests passing ✅
 
 ---
 
