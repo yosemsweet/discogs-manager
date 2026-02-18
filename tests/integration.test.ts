@@ -270,6 +270,21 @@ describe('Integration Tests - End-to-End Workflows', () => {
 
       for (const release of releases) {
         await db.addRelease(release);
+        // Add tracklists for each release
+        await db.addTracks(release.discogsId, [
+          {
+            title: 'Track 1',
+            artists: 'Rock Band',
+            position: '1',
+            duration: '3:30',
+          },
+          {
+            title: 'Track 2',
+            artists: 'Rock Band',
+            position: '2',
+            duration: '4:00',
+          },
+        ]);
       }
 
       // Create playlist
@@ -312,6 +327,15 @@ describe('Integration Tests - End-to-End Workflows', () => {
 
       for (const release of releases) {
         await db.addRelease(release);
+        // Add tracklist for the release
+        await db.addTracks(release.discogsId, [
+          {
+            title: 'Test Track 1',
+            artists: 'Test Artist',
+            position: '1',
+            duration: '3:45',
+          },
+        ]);
       }
 
       const soundcloudClient2 = new SoundCloudAPIClient('test-token');
@@ -337,9 +361,10 @@ describe('Integration Tests - End-to-End Workflows', () => {
       const soundcloudClient2 = new SoundCloudAPIClient('test-token');
       const playlistService2 = new PlaylistService(soundcloudClient2, db);
 
-      const playlist = await playlistService2.createPlaylist('Empty', []);
-      expect(playlist).toBeDefined();
-      expect(playlist.id).toBe('playlist-empty');
+      // Creating a playlist with no releases should fail
+      await expect(
+        playlistService2.createPlaylist('Empty', [])
+      ).rejects.toThrow('No tracks found');
     });
   });
 
@@ -378,6 +403,21 @@ describe('Integration Tests - End-to-End Workflows', () => {
 
       for (const release of releases) {
         await db.addRelease(release);
+        // Add tracklists for each release
+        await db.addTracks(release.discogsId, [
+          {
+            title: 'Track 1',
+            artists: release.artists,
+            position: '1',
+            duration: '3:45',
+          },
+          {
+            title: 'Track 2',
+            artists: release.artists,
+            position: '2',
+            duration: '4:15',
+          },
+        ]);
       }
 
       // Step 1: Get all releases

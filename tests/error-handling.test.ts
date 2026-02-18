@@ -30,7 +30,7 @@ describe('Error Handling and Edge Cases', () => {
     } as any);
 
     mockDiscogsClient = new DiscogsAPIClient('test-token', 'test-user');
-    mockSoundCloudClient = new SoundCloudAPIClient('test-id', 'test-token');
+    mockSoundCloudClient = new SoundCloudAPIClient('test-token');
     mockDb = new DatabaseManager(':memory:');
   });
 
@@ -102,7 +102,7 @@ describe('Error Handling and Edge Cases', () => {
           }),
         } as any);
 
-        const client = new SoundCloudAPIClient('id', 'token');
+        const client = new SoundCloudAPIClient('test-token');
         await expect(client.createPlaylist('')).rejects.toThrow();
       });
 
@@ -113,7 +113,7 @@ describe('Error Handling and Edge Cases', () => {
           }),
         } as any);
 
-        const client = new SoundCloudAPIClient('id', 'token');
+        const client = new SoundCloudAPIClient('test-token');
         await expect(client.addTrackToPlaylist('invalid-id', 'track-id')).rejects.toThrow();
       });
 
@@ -124,7 +124,7 @@ describe('Error Handling and Edge Cases', () => {
           }),
         } as any);
 
-        const client = new SoundCloudAPIClient('id', 'invalid-token');
+        const client = new SoundCloudAPIClient('invalid-token');
         await expect(client.createPlaylist('test')).rejects.toThrow();
       });
     });
@@ -253,8 +253,8 @@ describe('Error Handling and Edge Cases', () => {
       const service = new CollectionService(mockClient, mockDb);
       const result = await service.syncCollection('test-user');
 
-      expect(result.successCount).toBe(0);
-      expect(result.failureCount).toBe(0);
+      expect(typeof result).toBe('number');
+      expect(result).toBe(0);
     });
 
     test('CollectionService should handle sync with network errors', async () => {
@@ -272,9 +272,10 @@ describe('Error Handling and Edge Cases', () => {
       } as any;
 
       const service = new PlaylistService(mockSoundCloudClient, mockDb);
-      const result = await service.createPlaylist('Test Playlist', []);
-
-      expect(result.id).toBe('playlist-1');
+      // Creating playlist with no releases should fail
+      await expect(
+        service.createPlaylist('Test Playlist', [])
+      ).rejects.toThrow('No tracks found');
     });
 
     test('should handle very long genre lists', async () => {
