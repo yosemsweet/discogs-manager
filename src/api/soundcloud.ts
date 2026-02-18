@@ -73,6 +73,8 @@ export class SoundCloudAPIClient {
             rateLimitInfo.maxRequests,
             `Rate limit exceeded in ${context}: ${rateLimitInfo.remainingRequests} requests remaining. Reset at ${rateLimitInfo.resetTime}`
           );
+        case 422:
+          throw new SoundCloudAPIClientError(422, error, `Unprocessable entity in ${context}: ${data?.error_description || 'Request validation failed. This often occurs when the batch size is too large (try splitting into smaller batches).'}`);
         case 500:
         case 502:
         case 503:

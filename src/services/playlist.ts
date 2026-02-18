@@ -106,21 +106,46 @@ export class PlaylistService {
         throw new Error('No tracks found in SoundCloud for any releases');
       }
 
-      // Create playlist with all tracks in a single API call
+      // Create playlist with tracks, using batch insertion if too many tracks
       onProgress({ stage: 'Creating playlist', current: processedCount, total: releases.length, message: title });
-      const playlist = await this.soundcloudClient.createPlaylistWithTracks(
-        title,
-        validTrackIds,
-        description || '',
-        false // public playlist
-      );
+      
+      let playlist;
+      const BATCH_SIZE = 100; // SoundCloud likely has a limit around 100-200 tracks per request
+      
+      if (validTrackIds.length <= BATCH_SIZE) {
+        // Small enough for single request
+        playlist = await this.soundcloudClient.createPlaylistWithTracks(
+          title,
+          validTrackIds,
+          description || '',
+          false // public playlist
+        );
+      } else {
+        // Too many tracks - create empty playlist first, then add tracks in batches
+        playlist = await this.soundcloudClient.createPlaylist(title, description || '', false);
+        
+        // Give SoundCloud API a moment to process the playlist creation
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Add tracks in batches
+        for (let i = 0; i < validTrackIds.length; i += BATCH_SIZE) {
+          const batch = validTrackIds.slice(i, i + BATCH_SIZE);
+          onProgress({ 
+            stage: 'Adding tracks to playlist', 
+            current: i + batch.length, 
+            total: validTrackIds.length,
+            message: `Batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(validTrackIds.length / BATCH_SIZE)}`,
+          });
+          await this.soundcloudClient.addTracksToPlaylist(String(playlist.id), batch);
+        }
+      }
 
       onProgress({ stage: 'Saving playlist', current: processedCount + 1, total: releases.length });
       await this.db.createPlaylist(playlist.id, title, description);
 
       // Save all release-to-playlist mappings
       for (const { trackId, discogsId } of trackData) {
-        await this.db.addReleaseToPlaylist(playlist.id, discogsId, trackId);
+        await this.db.addReleaseToPlaylist(String(playlist.id), discogsId, trackId);
       }
 
       onProgress({ 
@@ -232,9 +257,26 @@ export class PlaylistService {
       return await this.soundcloudClient.getPlaylist(playlistId);
     }
 
-    // Add new tracks to existing playlist
+    // Add new tracks to existing playlist with batching for large updates
     onProgress({ stage: 'Adding new tracks', current: processedCount, total: newReleases.length, message: title });
-    await this.soundcloudClient.addTracksToPlaylist(playlistId, newTrackIds);
+    
+    const BATCH_SIZE = 100;
+    if (newTrackIds.length <= BATCH_SIZE) {
+      // Small batch - single request
+      await this.soundcloudClient.addTracksToPlaylist(playlistId, newTrackIds);
+    } else {
+      // Large batch - split into multiple requests
+      for (let i = 0; i < newTrackIds.length; i += BATCH_SIZE) {
+        const batch = newTrackIds.slice(i, i + BATCH_SIZE);
+        onProgress({ 
+          stage: 'Adding new tracks', 
+          current: i + batch.length, 
+          total: newTrackIds.length,
+          message: `Batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(newTrackIds.length / BATCH_SIZE)}`,
+        });
+        await this.soundcloudClient.addTracksToPlaylist(playlistId, batch);
+      }
+    }
 
     // Save new release-to-playlist mappings in database
     for (const { trackId, discogsId } of newTrackData) {
