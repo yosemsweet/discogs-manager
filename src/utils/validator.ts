@@ -28,17 +28,22 @@ export class Validator {
     force: boolean;
     releaseIds?: number[];
   } {
-    // Username is required
-    const username = options.username || process.env.DISCOGS_USERNAME;
+    // Username is required - check options first, then env
+    let username: string | undefined = options.username;
+    if (username === undefined) {
+      username = process.env.DISCOGS_USERNAME;
+    }
+
     if (!username || typeof username !== 'string') {
       throw new ValidationError('username', 'Username is required. Use --username or set DISCOGS_USERNAME');
     }
 
-    if (username.length === 0) {
+    const trimmed = username.trim();
+    if (trimmed.length === 0) {
       throw new ValidationError('username', 'Username cannot be empty');
     }
 
-    if (username.length > 50) {
+    if (trimmed.length > 50) {
       throw new ValidationError('username', 'Username must be 50 characters or less');
     }
 
@@ -50,7 +55,7 @@ export class Validator {
       releaseIds = this.validateReleaseIds(options.releaseIds);
     }
 
-    return { username, force, releaseIds };
+    return { username: trimmed, force, releaseIds };
   }
 
   /**
@@ -61,12 +66,17 @@ export class Validator {
     limit: number;
     filter: PlaylistFilter;
   } {
-    const username = options.username || process.env.DISCOGS_USERNAME;
+    let username: string | undefined = options.username;
+    if (username === undefined) {
+      username = process.env.DISCOGS_USERNAME;
+    }
+
     if (!username || typeof username !== 'string') {
       throw new ValidationError('username', 'Username is required. Use --username or set DISCOGS_USERNAME');
     }
 
-    if (username.length === 0 || username.length > 50) {
+    const trimmedUsername = username.trim();
+    if (trimmedUsername.length === 0 || trimmedUsername.length > 50) {
       throw new ValidationError('username', 'Username must be non-empty and <= 50 characters');
     }
 
@@ -143,7 +153,7 @@ export class Validator {
       throw new ValidationError('ratings', 'minRating must be <= maxRating');
     }
 
-    return { username, limit, filter };
+    return { username: trimmedUsername, limit, filter };
   }
 
   /**
@@ -223,16 +233,21 @@ export class Validator {
   static validateStatsOptions(options: any): {
     username: string;
   } {
-    const username = options.username || process.env.DISCOGS_USERNAME;
+    let username: string | undefined = options.username;
+    if (username === undefined) {
+      username = process.env.DISCOGS_USERNAME;
+    }
+
     if (!username || typeof username !== 'string') {
       throw new ValidationError('username', 'Username is required. Use --username or set DISCOGS_USERNAME');
     }
 
-    if (username.length === 0 || username.length > 50) {
+    const trimmed = username.trim();
+    if (trimmed.length === 0 || trimmed.length > 50) {
       throw new ValidationError('username', 'Username must be non-empty and <= 50 characters');
     }
 
-    return { username };
+    return { username: trimmed };
   }
 
   /**
