@@ -127,7 +127,7 @@ export class PlaylistService {
         stage: 'Playlist created', 
         current: releases.length, 
         total: releases.length,
-        message: `Added ${validTrackIds.length} tracks from ${releases.length} releases to "${title}"`,
+        message: `Added ${validTrackIds.length} individual tracks from ${releases.length} releases to "${title}"`,
       });
 
       return playlist;
@@ -245,7 +245,7 @@ export class PlaylistService {
       stage: 'Playlist updated', 
       current: newReleases.length, 
       total: newReleases.length,
-      message: `Added ${newTrackIds.length} new tracks from ${newReleases.length} new releases to "${title}"`,
+      message: `Added ${newTrackIds.length} individual tracks from ${newReleases.length} new releases to "${title}"`,
     });
 
     return await this.soundcloudClient.getPlaylist(playlistId);
