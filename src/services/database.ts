@@ -88,6 +88,19 @@ export class DatabaseManager {
           lastUpdated DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS soundcloud_tokens (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          access_token_encrypted TEXT NOT NULL,
+          access_token_iv TEXT NOT NULL,
+          access_token_auth_tag TEXT NOT NULL,
+          refresh_token_encrypted TEXT NOT NULL,
+          refresh_token_iv TEXT NOT NULL,
+          refresh_token_auth_tag TEXT NOT NULL,
+          expires_at INTEGER NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
         CREATE INDEX IF NOT EXISTS idx_releases_year ON releases(year);
         CREATE INDEX IF NOT EXISTS idx_releases_genres ON releases(genres);
         CREATE INDEX IF NOT EXISTS idx_tracks_releaseId ON tracks(releaseId);
