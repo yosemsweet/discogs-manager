@@ -80,7 +80,7 @@ describe('CLI Commands', () => {
 
     test('should fail when username is not provided', async () => {
       const cmd = createSyncCommand(mockDiscogsClient, mockDb);
-      
+
       // The command structure is defined
       expect(cmd.name()).toBe('sync');
     });
@@ -103,7 +103,7 @@ describe('CLI Commands', () => {
 
     test('should handle empty results gracefully', async () => {
       const cmd = createListCommand(mockDiscogsClient, mockDb);
-      
+
       // Command structure is properly defined
       expect(cmd.name()).toBe('list');
     });

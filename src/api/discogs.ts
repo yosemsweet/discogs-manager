@@ -165,7 +165,7 @@ export class DiscogsAPIClient {
 
     // Use centralized error handler to parse and log the error
     const appError = ErrorHandler.parse(error, context);
-    
+
     // Determine log severity based on whether error is retryable
     const severity = appError.isRetryable() ? 'warn' : 'error';
     ErrorHandler.log(appError, severity);

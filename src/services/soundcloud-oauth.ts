@@ -251,7 +251,7 @@ export class SoundCloudOAuthService {
       // Check if token needs refresh
       if (this.shouldRefreshToken(token)) {
         Logger.info('[SoundCloud] Access token expiring soon, refreshing...');
-        
+
         // Decrypt refresh token
         const refreshTokenData = {
           encrypted: token.refresh_token_encrypted,

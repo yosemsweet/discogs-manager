@@ -99,7 +99,7 @@ export function createPlaylistCommand(
       process.exit(0);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      
+
       // Check for rate limit errors
       if (message.includes('rate limit')) {
         spinner.fail(

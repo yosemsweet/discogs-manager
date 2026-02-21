@@ -176,7 +176,7 @@ export class SoundCloudAPIClient {
 
       Logger.warn(
         `[SoundCloud] Approaching rate limit (${rateLimitService.getState()?.remaining} requests remaining). ` +
-          `Pausing for ${humanReadableTime} until reset at ${rateLimitService.getFormattedResetTime()}`
+        `Pausing for ${humanReadableTime} until reset at ${rateLimitService.getFormattedResetTime()}`
       );
 
       // Wait until reset
@@ -240,7 +240,7 @@ export class SoundCloudAPIClient {
 
       // Filter out empty track IDs and log if any are removed
       const validTrackIds = trackIds.filter(id => typeof id === 'string' && id.trim().length > 0);
-      
+
       if (validTrackIds.length === 0) {
         throw new Error('No valid track IDs found');
       }
@@ -305,7 +305,7 @@ export class SoundCloudAPIClient {
 
       // Filter out empty track IDs
       const validTrackIds = trackIds.filter(id => typeof id === 'string' && id.trim().length > 0);
-      
+
       if (validTrackIds.length === 0) {
         throw new Error('No valid track IDs found');
       }

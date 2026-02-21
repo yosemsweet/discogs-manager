@@ -335,7 +335,7 @@ export class DatabaseManager {
       );
 
       for (const track of tracklist) {
-        const artists = track.artists 
+        const artists = track.artists
           ? (Array.isArray(track.artists) ? track.artists.map((a: any) => a.name).join(', ') : track.artists)
           : '';
         stmt.run(releaseId, track.title, artists, track.position || '', track.duration || '');

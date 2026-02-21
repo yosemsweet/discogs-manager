@@ -36,7 +36,7 @@ export class SoundCloudRateLimitService {
         // Check if state is not stale (less than 24 hours old)
         const now = new Date().getTime();
         const storedTime = new Date(stored.resetTime).getTime();
-        
+
         // Only restore if reset time is in the future (state still valid)
         if (storedTime > now) {
           this.state = {
@@ -63,7 +63,7 @@ export class SoundCloudRateLimitService {
     try {
       // Parse reset time string: "yyyy/MM/dd HH:mm:ss Z"
       const resetTime = this.parseResetTime(resetTimeString);
-      
+
       this.state = {
         remaining: remainingRequests,
         resetTime,
@@ -95,11 +95,11 @@ export class SoundCloudRateLimitService {
     // Remove timezone and parse as UTC
     const cleaned = timeString.replace(/\s[+-]\d{4}$/, '');
     const date = new Date(cleaned);
-    
+
     if (isNaN(date.getTime())) {
       throw new Error(`Invalid date format: ${timeString}`);
     }
-    
+
     return date;
   }
 
@@ -169,7 +169,7 @@ export class SoundCloudRateLimitService {
   getTimeUntilResetHuman(): string {
     const ms = this.getTimeUntilReset();
     if (ms <= 0) return 'now';
-    
+
     const seconds = Math.floor(ms / 1000);
     const minutes = Math.floor(seconds / 60);
     const hours = Math.floor(minutes / 60);

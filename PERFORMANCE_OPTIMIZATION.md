@@ -65,19 +65,19 @@ console.log(`Total hits: ${stats.hits}, misses: ${stats.misses}`);
 
 ### API Reference
 
-| Method | Purpose |
-|--------|---------|
-| `set(key, value, ttl?)` | Store value with optional custom TTL |
-| `get(key)` | Retrieve value or null if expired/missing |
-| `has(key)` | Check if key exists and is not expired |
-| `delete(key)` | Remove specific key |
-| `clear()` | Remove all entries |
-| `getTTL(key)` | Get remaining TTL in milliseconds |
-| `keys()` | Get all keys currently in cache |
-| `size()` | Get number of entries |
-| `getStats()` | Get hit rate, miss count, entry count |
-| `cleanup()` | Force removal of expired entries |
-| `destroy()` | Stop auto-cleanup and clear cache |
+| Method                  | Purpose                                   |
+|-------------------------|-------------------------------------------|
+| `set(key, value, ttl?)` | Store value with optional custom TTL      |
+| `get(key)`              | Retrieve value or null if expired/missing |
+| `has(key)`              | Check if key exists and is not expired    |
+| `delete(key)`           | Remove specific key                       |
+| `clear()`               | Remove all entries                        |
+| `getTTL(key)`           | Get remaining TTL in milliseconds         |
+| `keys()`                | Get all keys currently in cache           |
+| `size()`                | Get number of entries                     |
+| `getStats()`            | Get hit rate, miss count, entry count     |
+| `cleanup()`             | Force removal of expired entries          |
+| `destroy()`             | Stop auto-cleanup and clear cache         |
 
 ### Test Coverage
 **39 tests** covering:
@@ -160,17 +160,17 @@ const results = txManager.batch([
 ### API Reference
 
 **QueryBuilder Methods:**
-| Method | Purpose |
-|--------|---------|
-| `select(columns)` | Specify SELECT columns |
-| `from(table)` | Specify FROM table |
-| `where(condition, params?)` | Add WHERE clause |
-| `andWhere(condition, params?)` | Add AND condition |
-| `orWhere(condition, params?)` | Add OR condition |
-| `orderBy(column, direction?)` | Add ORDER BY (ASC/DESC) |
-| `limit(count)` | Add LIMIT |
-| `offset(count)` | Add OFFSET |
-| `build()` | Return {sql, params} ready for prepared statement |
+| Method                         | Purpose                                           |
+|--------------------------------|---------------------------------------------------|
+| `select(columns)`              | Specify SELECT columns                            |
+| `from(table)`                  | Specify FROM table                                |
+| `where(condition, params?)`    | Add WHERE clause                                  |
+| `andWhere(condition, params?)` | Add AND condition                                 |
+| `orWhere(condition, params?)`  | Add OR condition                                  |
+| `orderBy(column, direction?)`  | Add ORDER BY (ASC/DESC)                           |
+| `limit(count)`                 | Add LIMIT                                         |
+| `offset(count)`                | Add OFFSET                                        |
+| `build()`                      | Return {sql, params} ready for prepared statement |
 
 **CommonQueries Helpers:**
 - `selectAll(table)` - SELECT * FROM table
@@ -364,30 +364,30 @@ class OptimizedSyncService {
 ### API Reference
 
 **ConcurrencyManager:**
-| Method | Purpose |
-|--------|---------|
-| `enqueue(task)` | Add single task, returns Promise<TaskResult> |
+| Method                | Purpose                                           |
+|-----------------------|---------------------------------------------------|
+| `enqueue(task)`       | Add single task, returns Promise<TaskResult>      |
 | `enqueueBatch(tasks)` | Add multiple tasks, returns Promise<TaskResult[]> |
-| `getResult(id)` | Get result by task ID |
-| `getSuccessful()` | Get all successful results |
-| `getFailed()` | Get all failed results |
-| `getStats()` | Get execution statistics |
-| `waitAll()` | Wait for all tasks to complete |
-| `reset()` | Clear results and stats |
-| `clear()` | Clear pending tasks from queue |
+| `getResult(id)`       | Get result by task ID                             |
+| `getSuccessful()`     | Get all successful results                        |
+| `getFailed()`         | Get all failed results                            |
+| `getStats()`          | Get execution statistics                          |
+| `waitAll()`           | Wait for all tasks to complete                    |
+| `reset()`             | Clear results and stats                           |
+| `clear()`             | Clear pending tasks from queue                    |
 
 **RateLimiter:**
-| Method | Purpose |
-|--------|---------|
-| `allow(tokens?)` | Check if allowed (consumes token if true) |
-| `waitUntilAllowed(tokens?)` | Async wait until allowed |
-| `getTokens()` | Get current token count |
+| Method                      | Purpose                                   |
+|-----------------------------|-------------------------------------------|
+| `allow(tokens?)`            | Check if allowed (consumes token if true) |
+| `waitUntilAllowed(tokens?)` | Async wait until allowed                  |
+| `getTokens()`               | Get current token count                   |
 
 **BatchProcessor:**
-| Method | Purpose |
-|--------|---------|
-| `processBatches(items, size, handler)` | Sequential batch processing |
-| `processParallelBatches(items, size, concurrency, handler)` | Parallel batch processing |
+| Method                                                      | Purpose                     |
+|-------------------------------------------------------------|-----------------------------|
+| `processBatches(items, size, handler)`                      | Sequential batch processing |
+| `processParallelBatches(items, size, concurrency, handler)` | Parallel batch processing   |
 
 ### Test Coverage
 **30 tests** covering:
@@ -407,12 +407,12 @@ class OptimizedSyncService {
 
 ### Expected Benefits
 
-| Operation | Before | After | Improvement |
-|-----------|--------|-------|-------------|
-| Repeated release fetch | API call every time | Cache hit in 100ms | 90-99% faster |
-| Collection sync (100 items) | Sequential API calls | 10 parallel + cache | 5-10x faster |
-| Rate-limited operations | Manual throttling | Automatic limiting | More reliable |
-| Complex SQL queries | Manual string building | Query builder | Fewer errors, safer |
+| Operation                   | Before                 | After               | Improvement         |
+|-----------------------------|------------------------|---------------------|---------------------|
+| Repeated release fetch      | API call every time    | Cache hit in 100ms  | 90-99% faster       |
+| Collection sync (100 items) | Sequential API calls   | 10 parallel + cache | 5-10x faster        |
+| Rate-limited operations     | Manual throttling      | Automatic limiting  | More reliable       |
+| Complex SQL queries         | Manual string building | Query builder       | Fewer errors, safer |
 
 ### Benchmarks
 

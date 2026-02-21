@@ -200,14 +200,14 @@ export function createXCommand(...) {
 
 ## Code Quality Metrics
 
-| Metric | Current | Target | Status |
-|--------|---------|--------|--------|
-| Test Coverage | 91/95 passing | 100 passing | 🟡 Needs work |
-| TypeScript Strict | No | Yes | 🔴 Not enabled |
-| Command Duplication | 6 commands × 30 lines | 1 shared handler | 🟡 High debt |
-| Type Safety | ~20 `any` types | 0 `any` types | 🔴 Needs work |
-| Error Handling | Inconsistent | Centralized | 🟡 Fragmented |
-| Test Isolation | Some mocking | Full mocks | 🟡 Incomplete |
+| Metric              | Current               | Target           | Status         |
+|---------------------|-----------------------|------------------|----------------|
+| Test Coverage       | 91/95 passing         | 100 passing      | 🟡 Needs work  |
+| TypeScript Strict   | No                    | Yes              | 🔴 Not enabled |
+| Command Duplication | 6 commands × 30 lines | 1 shared handler | 🟡 High debt   |
+| Type Safety         | ~20 `any` types       | 0 `any` types    | 🔴 Needs work  |
+| Error Handling      | Inconsistent          | Centralized      | 🟡 Fragmented  |
+| Test Isolation      | Some mocking          | Full mocks       | 🟡 Incomplete  |
 
 ---
 
@@ -450,14 +450,14 @@ Focus on knowledge transfer and test coverage
 
 ## Estimated Effort Summary
 
-| Phase | Tasks | Effort | Impact |
-|-------|-------|--------|--------|
-| Phase 1: Stability | 3 tasks | 9-12 hours | 🔴 Critical |
-| Phase 2: Maintainability | 3 tasks | 14-18 hours | 🟠 High |
-| Phase 3: Performance | 3 tasks | 10-13 hours | 🟡 Medium |
-| Phase 4: Robustness | 3 tasks | 7-10 hours | 🟡 Medium |
-| Phase 5: Documentation | 3 tasks | 12-16 hours | 🟢 Low |
-| **TOTAL** | **15 tasks** | **52-69 hours** | **Significant** |
+| Phase                    | Tasks        | Effort          | Impact          |
+|--------------------------|--------------|-----------------|-----------------|
+| Phase 1: Stability       | 3 tasks      | 9-12 hours      | 🔴 Critical     |
+| Phase 2: Maintainability | 3 tasks      | 14-18 hours     | 🟠 High         |
+| Phase 3: Performance     | 3 tasks      | 10-13 hours     | 🟡 Medium       |
+| Phase 4: Robustness      | 3 tasks      | 7-10 hours      | 🟡 Medium       |
+| Phase 5: Documentation   | 3 tasks      | 12-16 hours     | 🟢 Low          |
+| **TOTAL**                | **15 tasks** | **52-69 hours** | **Significant** |
 
 ---
 

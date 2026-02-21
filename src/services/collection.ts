@@ -17,7 +17,7 @@ export class CollectionService {
   async syncCollection(username: string, onProgress: ProgressCallback = noopProgress, forceRefresh: boolean = false) {
     try {
       onProgress({ stage: 'Fetching collection', current: 0, total: 0 });
-      
+
       const collection = await this.discogsClient.getCollectionPaginated(username);
       const releases = collection.releases || [];
       const totalReleases = releases.length;
@@ -27,12 +27,12 @@ export class CollectionService {
       let failedCount = 0;
       let skippedCount = 0;
       let currentPage = 1;
-      
+
       for (const release of releases) {
         // Update page number based on items processed
         const itemsPerPage = 50;
         currentPage = Math.floor(processedCount / itemsPerPage) + 1;
-        
+
         // Check if release already exists unless force refresh is enabled
         if (!forceRefresh && await this.db.releaseExists(release.id)) {
           skippedCount++;
@@ -46,7 +46,7 @@ export class CollectionService {
           });
           continue;
         }
-        
+
         onProgress({
           stage: 'Syncing releases',
           current: processedCount + skippedCount + 1,
@@ -70,12 +70,12 @@ export class CollectionService {
             addedAt: new Date(),
           };
           await this.db.addRelease(storedRelease);
-          
+
           // Store the tracklist for later use
           if (releaseDetails.tracklist && Array.isArray(releaseDetails.tracklist)) {
             await this.db.addTracks(releaseDetails.id, releaseDetails.tracklist);
           }
-          
+
           processedCount++;
         } catch (error) {
           failedCount++;

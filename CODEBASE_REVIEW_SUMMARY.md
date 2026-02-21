@@ -49,14 +49,14 @@
 4. Add TypeScript strict → Catch type errors
 
 ## 📈 Impact of Improvements
-| Phase | Tasks | Effort | Impact |
-|-------|-------|--------|--------|
-| Phase 1 | 3 | 9-12h | 🔴 Critical |
-| Phase 2 | 3 | 14-18h | 🟠 High |
-| Phase 3 | 3 | 10-13h | 🟡 Medium |
-| Phase 4 | 3 | 7-10h | 🟡 Medium |
-| Phase 5 | 3 | 12-16h | 🟢 Low |
-| TOTAL | 15 | 52-69h | Significant |
+| Phase   | Tasks | Effort | Impact      |
+|---------|-------|--------|-------------|
+| Phase 1 | 3     | 9-12h  | 🔴 Critical |
+| Phase 2 | 3     | 14-18h | 🟠 High     |
+| Phase 3 | 3     | 10-13h | 🟡 Medium   |
+| Phase 4 | 3     | 7-10h  | 🟡 Medium   |
+| Phase 5 | 3     | 12-16h | 🟢 Low      |
+| TOTAL   | 15    | 52-69h | Significant |
 
 ## 🎯 Success Metrics
 After Phase 1:

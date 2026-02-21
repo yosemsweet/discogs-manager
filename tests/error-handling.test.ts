@@ -598,4 +598,5 @@ describe('Error Handling and Edge Cases', () => {
 
       expect(humanReadable).toMatch(/[0-9]+(h|m|s)/);
     });
-  });});
+  });
+});
