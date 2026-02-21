@@ -5,6 +5,8 @@ import { CollectionService } from '../services/collection';
 import { DiscogsAPIClient } from '../api/discogs';
 import { CommandBuilder } from '../utils/command-builder';
 import { Validator, ValidationError } from '../utils/validator';
+import { InputSanitizer } from '../utils/sanitizer';
+import { Logger } from '../utils/logger';
 
 export function createListCommand(discogsClient: DiscogsAPIClient, db: DatabaseManager) {
   const cmd = new Command('list')
@@ -22,6 +24,38 @@ export function createListCommand(discogsClient: DiscogsAPIClient, db: DatabaseM
     const spinner = CommandBuilder.createSpinner();
 
     try {
+      // Sanitize input for security
+      if (username) {
+        const sanitized = InputSanitizer.normalizeString(username);
+        if (!sanitized) {
+          throw new ValidationError('username', 'Username sanitization failed');
+        }
+        username = sanitized;
+
+        if (InputSanitizer.isSuspicious(username)) {
+          Logger.warn('Suspicious username pattern detected', { username });
+          throw new ValidationError('username', 'Username contains suspicious patterns');
+        }
+      }
+
+      // Sanitize genre options
+      if (options.genres) {
+        const sanitized = InputSanitizer.sanitizeSearchQuery(options.genres);
+        if (!sanitized) {
+          throw new ValidationError('genres', 'Genres filter sanitization failed');
+        }
+        options.genres = sanitized;
+      }
+
+      // Sanitize style options
+      if (options.styles) {
+        const sanitized = InputSanitizer.sanitizeSearchQuery(options.styles);
+        if (!sanitized) {
+          throw new ValidationError('styles', 'Styles filter sanitization failed');
+        }
+        options.styles = sanitized;
+      }
+
       // Validate options
       const validated = Validator.validateListOptions({
         username: username,

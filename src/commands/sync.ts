@@ -4,6 +4,8 @@ import { DatabaseManager } from '../services/database';
 import { CollectionService } from '../services/collection';
 import { CommandBuilder } from '../utils/command-builder';
 import { Validator, ValidationError } from '../utils/validator';
+import { InputSanitizer } from '../utils/sanitizer';
+import { Logger } from '../utils/logger';
 
 export function createSyncCommand(discogsClient: DiscogsAPIClient, db: DatabaseManager) {
   const cmd = new Command('sync')
@@ -17,6 +19,21 @@ export function createSyncCommand(discogsClient: DiscogsAPIClient, db: DatabaseM
     const spinner = CommandBuilder.createSpinner();
 
     try {
+      // Sanitize input options for security
+      if (options.username) {
+        const sanitized = InputSanitizer.normalizeString(options.username);
+        if (!sanitized) {
+          throw new ValidationError('username', 'Username sanitization failed');
+        }
+        options.username = sanitized;
+      }
+
+      // Check for suspicious patterns in usernames
+      if (options.username && InputSanitizer.isSuspicious(options.username)) {
+        Logger.warn('Suspicious username pattern detected', { username: options.username });
+        throw new ValidationError('username', 'Username contains suspicious patterns');
+      }
+
       // Validate options
       const validated = Validator.validateSyncOptions(options);
 

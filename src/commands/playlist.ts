@@ -11,6 +11,8 @@ import { PlaylistFilter } from '../types';
 import { CommandBuilder } from '../utils/command-builder';
 import { Validator, ValidationError } from '../utils/validator';
 import { EncryptionService } from '../utils/encryption';
+import { InputSanitizer } from '../utils/sanitizer';
+import { Logger } from '../utils/logger';
 
 export function createPlaylistCommand(
   discogsClient: DiscogsAPIClient,
@@ -31,6 +33,37 @@ export function createPlaylistCommand(
     const spinner = CommandBuilder.createSpinner();
 
     try {
+      // Sanitize input options for security
+      if (options.title) {
+        const sanitized = InputSanitizer.sanitizePlaylistName(options.title);
+        if (!sanitized) {
+          throw new ValidationError('title', 'Playlist title sanitization failed');
+        }
+        options.title = sanitized;
+      }
+
+      if (options.description) {
+        const sanitized = InputSanitizer.normalizeString(options.description, 500);
+        if (!sanitized) {
+          throw new ValidationError('description', 'Description sanitization failed');
+        }
+        options.description = sanitized;
+      }
+
+      if (options.genres) {
+        const sanitized = InputSanitizer.sanitizeSearchQuery(options.genres);
+        if (!sanitized) {
+          throw new ValidationError('genres', 'Genres filter sanitization failed');
+        }
+        options.genres = sanitized;
+      }
+
+      // Check for suspicious patterns
+      if (options.title && InputSanitizer.isSuspicious(options.title)) {
+        Logger.warn('Suspicious playlist title pattern detected', { title: options.title });
+        throw new ValidationError('title', 'Playlist title contains suspicious patterns');
+      }
+
       // Lazy-load SoundCloud client if not provided
       let clientToUse = soundcloudClient;
       if (!clientToUse) {
