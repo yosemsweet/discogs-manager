@@ -23,8 +23,8 @@ program
 // Initialize clients and database
 const discogsToken = process.env.DISCOGS_API_TOKEN;
 const discogsUsername = process.env.DISCOGS_USERNAME;
-const soundcloudAccessToken = process.env.SOUNDCLOUD_ACCESS_TOKEN;
 const dbPath = process.env.DB_PATH || './data/discogs-manager.db';
+const soundcloudAccessToken = process.env.SOUNDCLOUD_ACCESS_TOKEN;
 
 if (!discogsToken || !discogsUsername) {
   console.error(
@@ -54,11 +54,10 @@ program.addCommand(createSyncCommand(discogsClient, db));
 program.addCommand(createListCommand(discogsClient, db));
 program.addCommand(createStatsCommand(discogsClient, db));
 program.addCommand(createAuthCommand());
-if (soundcloudClient) {
-  program.addCommand(
-    createPlaylistCommand(discogsClient, soundcloudClient, db)
-  );
-}
+// Always register playlist command - it will lazy-load the token from database
+program.addCommand(
+  createPlaylistCommand(discogsClient, soundcloudClient, db)
+);
 registerRetryCommand(program);
 
 program.parse(process.argv);
