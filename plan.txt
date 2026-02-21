@@ -51,15 +51,116 @@ Core CLI, Discogs API integration, SoundCloud OAuth 2.1, rate limiting, database
 
 ### Phase 4: Robustness (WEEKS 7-8)
 
-**Priority 1: Enhanced Logging**
+**Priority 1: OAuth Refresh Token Implementation** ⭐ NEW
+- Effort: 3-4h | Impact: HIGH
+- Enable token refresh flow for long-lived sessions without user re-authentication
+
+**Implementation Details:**
+
+**1. Encryption Infrastructure**
+- Use Node's built-in `crypto` module for AES-256-GCM encryption
+- Create `EncryptionService` utility:
+  - `encrypt(plaintext: string): {encrypted: string, iv: string, authTag: string}`
+  - `decrypt(encrypted: string, iv: string, authTag: string): string`
+  - Derive encryption key from ENCRYPTION_KEY env var (or generate on first run)
+  - Store key securely in `.env.example` with warning about changing it
+- Encryption happens transparently - only encrypted blobs stored in DB
+
+**2. Database Schema Changes**
+- New table: `soundcloud_tokens`
+  ```sql
+  CREATE TABLE soundcloud_tokens (
+    id INTEGER PRIMARY KEY,
+    access_token_encrypted TEXT NOT NULL,
+    access_token_iv TEXT NOT NULL,
+    access_token_auth_tag TEXT NOT NULL,
+    refresh_token_encrypted TEXT NOT NULL,
+    refresh_token_iv TEXT NOT NULL,
+    refresh_token_auth_tag TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    UNIQUE(id)
+  )
+  ```
+- Migration: Create table if not exists (handle both old and new installations)
+- Store token expiration time for proactive refresh (refresh when expires_at - 5min < now)
+
+**3. OAuth Flow Changes**
+- Command: `auth` - generates both access_token AND refresh_token on first auth
+- Store both tokens encrypted in database (no longer in `.env`)
+- Remove SOUNDCLOUD_USER_TOKEN from `.env` (token now lives in DB)
+- Keep SOUNDCLOUD_CLIENT_ID and ENCRYPTION_KEY in `.env`
+
+**4. Token Refresh Service**
+- Create `SoundCloudOAuthService` with:
+  ```typescript
+  getValidAccessToken(): Promise<string>
+    - Check if token expired (expires_at - 5min < now)
+    - If expired: call refreshAccessToken()
+    - Return valid access token (decrypt from DB)
+  
+  refreshAccessToken(): Promise<void>
+    - Decrypt refresh_token from DB
+    - POST to SoundCloud OAuth endpoint with refresh_token
+    - Get new access_token and refresh_token
+    - Encrypt and update both tokens in DB
+    - Update expires_at timestamp
+  ```
+- Auto-refresh transparent to consumers - they just call getValidAccessToken()
+
+**5. Error Handling**
+- If refresh fails: raise AuthenticationError with message "Please re-authenticate with 'npm run dev -- auth'"
+- 401 from SoundCloud API triggers token refresh attempt
+- If refresh still fails: token is invalid/revoked, require re-auth
+
+**6. Command Updates**
+- `auth` command: 
+  - Clears old encrypted tokens from DB
+  - Gets new tokens
+  - Stores both encrypted in DB
+  - Shows success message: "✓ Authenticated! Tokens stored securely in database"
+- All other commands: Use `getValidAccessToken()` for API calls
+
+**7. Migration Path (backwards compatibility)**
+- Check if `.env` has SOUNDCLOUD_USER_TOKEN
+- If found: migrate to database encryption (one-time)
+- Remove SOUNDCLOUD_USER_TOKEN from `.env` with warning
+- Log: "Migrated legacy token to encrypted storage"
+
+**8. Security Considerations**
+- ENCRYPTION_KEY env var is critical - warn users: "Never commit encryption key changes"
+- If key changes, existing tokens become unrecoverable
+- Tokens encrypted at rest, only decrypted when needed
+- Consider: Add optional database encryption (SQLCipher) for defense-in-depth
+- Token lifetime: SoundCloud tokens (expire in ~12 hours typically)
+- Refresh token lifetime: longer (months) - rotate on each refresh
+
+**9. Testing**
+- Test encryption/decryption roundtrip
+- Test token expiration detection
+- Test refresh token flow (mock SoundCloud response)
+- Test error handling (invalid refresh token)
+- Test migration from .env to DB
+- Test auto-refresh on 401 response from API
+
+**10. Documentation Updates**
+- Update README: Remove SOUNDCLOUD_USER_TOKEN from .env template
+- Add ENCRYPTION_KEY to .env.example with security warning
+- Document refresh flow and token lifetime
+- Add troubleshooting: "How to re-authenticate"
+
+---
+
+**Priority 2: Enhanced Logging**
 - Effort: 2-3h | Impact: MEDIUM
 - Structured logging (JSON), log levels, rotation, operation tracing
 
-**Priority 2: Graceful Error Recovery**
+**Priority 3: Graceful Error Recovery**
 - Effort: 3-4h | Impact: MEDIUM
 - Retry with backoff, partial sync recovery, circuit breaker, timeout handling
 
-**Priority 3: Data Sanitization & Security**
+**Priority 4: Data Sanitization & Security**
 - Effort: 2-3h | Impact: LOW
 - Input sanitization, rate limiting, OAuth security, secrets management
 
