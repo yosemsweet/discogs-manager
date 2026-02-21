@@ -71,13 +71,19 @@ Core CLI, Discogs API integration, SoundCloud OAuth 2.1, rate limiting, database
 - 24 integration tests
 - Production-ready with live testing verified
 
-**1. Encryption Infrastructure**
-- Use Node's built-in `crypto` module for AES-256-GCM encryption
-- Create `EncryptionService` utility:
-  - `encrypt(plaintext: string): {encrypted: string, iv: string, authTag: string}`
-  - `decrypt(encrypted: string, iv: string, authTag: string): string`
-  - Derive encryption key from ENCRYPTION_KEY env var (or generate on first run)
-  - Store key securely in `.env.example` with warning about changing it
+**Priority 2: Enhanced Logging** ✅ COMPLETE
+- Structured JSON logging with context data
+- Multiple log levels (DEBUG, INFO, WARN, ERROR)
+- Operation tracing with automatic timing and trace IDs
+- Daily log rotation with JSON format
+- Configurable via LOG_LEVEL and LOG_DIR environment variables
+- Backwards compatible with existing code
+- 31 comprehensive test cases
+- Complete documentation: ENHANCED_LOGGING.md
+
+---
+
+## Implementation Details (OAuth Refresh Tokens)
 - Encryption happens transparently - only encrypted blobs stored in DB
 
 **2. Database Schema Changes**
@@ -203,11 +209,17 @@ Core CLI, Discogs API integration, SoundCloud OAuth 2.1, rate limiting, database
 **Build/Test:**
 ```bash
 npm run build   # TypeScript compilation (strict mode)
-npm test        # All 323 tests
+npm test        # All 346 tests (1 skipped)
 npm run dev -- sync    # Test command
 npm run dev -- playlist -t "World Music" -g "World"  # Test playlist
 npm run dev -- auth    # Test OAuth
 ./test-workflow.sh     # Complete workflow test
+
+# Set log level (default: info)
+LOG_LEVEL=debug npm run dev -- sync
+
+# Set custom log directory
+LOG_DIR=/var/log/discogs-manager npm run dev
 ```
 
 **Docs:**
@@ -216,10 +228,11 @@ npm run dev -- auth    # Test OAuth
 - `API_REFERENCE.md` - API details
 - `PERFORMANCE_OPTIMIZATION.md` - Performance features
 - `OAUTH_REFRESH_IMPLEMENTATION.md` - OAuth implementation details
+- `ENHANCED_LOGGING.md` - Logging configuration & usage
 
 **Architecture:**
 - `src/api/` - API clients (Discogs, SoundCloud)
 - `src/services/` - Business logic (collection, playlist, database, OAuth)
 - `src/commands/` - CLI commands (sync, list, stats, playlist, auth, retry)
 - `src/utils/` - Utilities (cache, query-builder, concurrency, encryption, logger)
-- `tests/` - Test suite (323 tests, 100% pass rate)
+- `tests/` - Test suite (346 tests, 100% pass rate)
