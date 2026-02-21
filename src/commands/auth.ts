@@ -3,9 +3,12 @@ import chalk from 'chalk';
 import open from 'open';
 import express from 'express';
 import { SoundCloudOAuthService } from '../services/soundcloud-oauth';
+import { DatabaseManager } from '../services/database';
+import { EncryptionService } from '../utils/encryption';
 import * as fs from 'fs';
 import * as path from 'path';
 import { CommandBuilder } from '../utils/command-builder';
+import { Logger } from '../utils/logger';
 
 export function createAuthCommand() {
   const cmd = new Command('auth')
@@ -16,6 +19,7 @@ export function createAuthCommand() {
       try {
         const clientId = process.env.SOUNDCLOUD_CLIENT_ID;
         const clientSecret = process.env.SOUNDCLOUD_CLIENT_SECRET;
+        const encryptionKey = process.env.ENCRYPTION_KEY;
 
         if (!clientId || !clientSecret) {
           spinner.fail(CommandBuilder.formatError('SoundCloud OAuth credentials not found'));
@@ -27,8 +31,31 @@ export function createAuthCommand() {
           process.exit(1);
         }
 
+        if (!encryptionKey) {
+          spinner.fail(CommandBuilder.formatError('ENCRYPTION_KEY not found'));
+          console.log(chalk.yellow('Generate an encryption key with:'));
+          console.log('  openssl rand -hex 32');
+          console.log('');
+          console.log(chalk.yellow('Then add to your .env file:'));
+          console.log('  ENCRYPTION_KEY=<generated_key>');
+          process.exit(1);
+        }
+
+        // Initialize encryption and database
+        let encryption: EncryptionService;
+        let db: DatabaseManager;
+
+        try {
+          encryption = new EncryptionService(encryptionKey);
+          db = new DatabaseManager();
+          await db.initialized;
+        } catch (error) {
+          spinner.fail(CommandBuilder.formatError(`Failed to initialize: ${error instanceof Error ? error.message : 'Unknown error'}`));
+          process.exit(1);
+        }
+
         spinner.text = 'Initializing SoundCloud OAuth flow...';
-        const oauthService = new SoundCloudOAuthService(clientId, clientSecret);
+        const oauthService = new SoundCloudOAuthService(clientId, clientSecret, 'http://localhost:8080/callback', db, encryption);
         const { url, codeVerifier, state } = oauthService.getAuthorizationUrl();
 
         spinner.text = 'Opening browser for authorization...';
@@ -96,35 +123,12 @@ export function createAuthCommand() {
             spinner.start('Exchanging code for access token...');
             const token = await oauthService.exchangeCodeForToken(code, codeVerifier);
 
-            // Save token to .env file
-            const envPath = path.resolve('.env');
-            let envContent = fs.readFileSync(envPath, 'utf-8');
-
-            // Update or add SOUNDCLOUD_ACCESS_TOKEN
-            if (envContent.includes('SOUNDCLOUD_ACCESS_TOKEN=')) {
-              envContent = envContent.replace(
-                /SOUNDCLOUD_ACCESS_TOKEN=.*/,
-                `SOUNDCLOUD_ACCESS_TOKEN=${token.access_token}`
-              );
-            } else {
-              envContent += `\nSOUNDCLOUD_ACCESS_TOKEN=${token.access_token}`;
-            }
-
-            // Save refresh token for future use
-            if (envContent.includes('SOUNDCLOUD_REFRESH_TOKEN=')) {
-              envContent = envContent.replace(
-                /SOUNDCLOUD_REFRESH_TOKEN=.*/,
-                `SOUNDCLOUD_REFRESH_TOKEN=${token.refresh_token}`
-              );
-            } else {
-              envContent += `\nSOUNDCLOUD_REFRESH_TOKEN=${token.refresh_token}`;
-            }
-
-            fs.writeFileSync(envPath, envContent);
+            // Tokens are automatically stored encrypted in database
+            // (done by SoundCloudOAuthService.exchangeCodeForToken)
 
             spinner.succeed(CommandBuilder.formatSuccess('Authentication successful!'));
             console.log('');
-            console.log(chalk.green('Token saved to .env file'));
+            console.log(chalk.green('✓ Tokens securely stored in database (encrypted)'));
             console.log(chalk.gray(`   Token expires in: ${Math.floor(token.expires_in / 3600)} hours`));
             console.log('');
             console.log(chalk.cyan('You can now use the CLI to create playlists!'));
@@ -134,6 +138,7 @@ export function createAuthCommand() {
                 <body style="font-family: sans-serif; padding: 20px; text-align: center;">
                   <h1>✅ Success!</h1>
                   <p>SoundCloud authentication completed successfully.</p>
+                  <p>Tokens are securely stored in the database.</p>
                   <p>You can close this window and start using the CLI.</p>
                 </body>
               </html>
