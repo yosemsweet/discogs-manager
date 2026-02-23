@@ -5,7 +5,7 @@ A powerful command-line interface for managing your Discogs music collection and
 ## Features
 
 - **📦 Sync Collections**: Connect to your Discogs account and sync your entire collection locally with automatic pagination support
-- **🔍 Advanced Filtering**: Filter releases by genre, year, style, and rating
+- **🔍 Advanced Filtering**: Filter releases by genre, year, style, artist, label, and rating
 - **📊 Collection Statistics**: View comprehensive statistics including total count, genre breakdown, and year range
 - **🎵 Create Playlists**: Automatically create SoundCloud playlists from filtered collection subsets
 - **💾 Local Database**: Fast SQLite database (better-sqlite3) for caching your collection
@@ -346,6 +346,8 @@ npm run dev -- list [username] [options]
 - `--min-rating <rating>` - Minimum rating (0-5)
 - `--max-rating <rating>` - Maximum rating (0-5)
 - `-s, --styles <styles>` - Filter by styles (comma-separated), e.g., "Funk,Soul"
+- `-a, --artists <artists>` - Filter by artists (comma-separated), e.g., "Miles Davis,John Coltrane"
+- `-l, --labels <labels>` - Filter by labels (comma-separated), e.g., "Blue Note,Columbia"
 
 **Examples:**
 ```bash
@@ -366,6 +368,15 @@ npm run dev -- list --genres "Rock,Alternative" --min-year 2000
 
 # View albums by style
 npm run dev -- list --styles "Electronic,Ambient"
+
+# View albums by artist
+npm run dev -- list --artists "The Beatles,Pink Floyd"
+
+# View albums by label
+npm run dev -- list --labels "Blue Note Records"
+
+# Complex filtering: Jazz by specific artists on specific labels
+npm run dev -- list --genres "Jazz" --artists "Miles Davis,John Coltrane" --labels "Blue Note,Columbia"
 ```
 
 **Output Format:**
@@ -500,6 +511,8 @@ npm run dev -- playlist [username] --title <title> [options]
 - `--min-rating <rating>` - Minimum rating (0-5)
 - `--max-rating <rating>` - Maximum rating (0-5)
 - `-s, --styles <styles>` - Filter by styles (comma-separated)
+- `-a, --artists <artists>` - Filter by artists (comma-separated)
+- `-l, --labels <labels>` - Filter by labels (comma-separated)
 
 **Examples:**
 ```bash
@@ -519,6 +532,17 @@ npm run dev -- playlist --title "Modern Electronic" --genres "Electronic" \
 
 # Create by style
 npm run dev -- playlist --title "Funk & Soul" --styles "Funk,Soul"
+
+# Create by artist
+npm run dev -- playlist --title "Beatles Collection" --artists "The Beatles"
+
+# Create by label
+npm run dev -- playlist --title "Blue Note Jazz" --labels "Blue Note Records"
+
+# Complex: 60s Jazz by specific artists on specific labels
+npm run dev -- playlist --title "60s Jazz Masters" \
+  --genres "Jazz" --artists "Miles Davis,John Coltrane" \
+  --labels "Blue Note,Columbia" --min-year 1960 --max-year 1969
 ```
 
 **Note:** Requires SoundCloud API credentials in `.env` file (see [Configuration](#configuration) section).

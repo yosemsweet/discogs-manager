@@ -153,6 +153,32 @@ export class Validator {
             throw new ValidationError('ratings', 'minRating must be <= maxRating');
         }
 
+        if (options.artists && typeof options.artists === 'string') {
+            const artists = options.artists.split(',').map((a: string) => a.trim()).filter((a: string) => a.length > 0);
+            if (artists.length === 0) {
+                throw new ValidationError('artists', 'At least one artist must be provided');
+            }
+            for (const artist of artists) {
+                if (artist.length > 100) {
+                    throw new ValidationError('artists', 'Artist names must be <= 100 characters');
+                }
+            }
+            filter.artists = artists;
+        }
+
+        if (options.labels && typeof options.labels === 'string') {
+            const labels = options.labels.split(',').map((l: string) => l.trim()).filter((l: string) => l.length > 0);
+            if (labels.length === 0) {
+                throw new ValidationError('labels', 'At least one label must be provided');
+            }
+            for (const label of labels) {
+                if (label.length > 100) {
+                    throw new ValidationError('labels', 'Label names must be <= 100 characters');
+                }
+            }
+            filter.labels = labels;
+        }
+
         return { username: trimmedUsername, limit, filter };
     }
 
@@ -217,6 +243,45 @@ export class Validator {
 
         if (filter.minYear && filter.maxYear && filter.minYear > filter.maxYear) {
             throw new ValidationError('years', 'minYear must be <= maxYear');
+        }
+
+        if (options.styles && typeof options.styles === 'string') {
+            const styles = options.styles.split(',').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+            if (styles.length === 0) {
+                throw new ValidationError('styles', 'At least one style must be provided');
+            }
+            for (const style of styles) {
+                if (style.length > 100) {
+                    throw new ValidationError('styles', 'Style names must be <= 100 characters');
+                }
+            }
+            filter.styles = styles;
+        }
+
+        if (options.artists && typeof options.artists === 'string') {
+            const artists = options.artists.split(',').map((a: string) => a.trim()).filter((a: string) => a.length > 0);
+            if (artists.length === 0) {
+                throw new ValidationError('artists', 'At least one artist must be provided');
+            }
+            for (const artist of artists) {
+                if (artist.length > 100) {
+                    throw new ValidationError('artists', 'Artist names must be <= 100 characters');
+                }
+            }
+            filter.artists = artists;
+        }
+
+        if (options.labels && typeof options.labels === 'string') {
+            const labels = options.labels.split(',').map((l: string) => l.trim()).filter((l: string) => l.length > 0);
+            if (labels.length === 0) {
+                throw new ValidationError('labels', 'At least one label must be provided');
+            }
+            for (const label of labels) {
+                if (label.length > 100) {
+                    throw new ValidationError('labels', 'Label names must be <= 100 characters');
+                }
+            }
+            filter.labels = labels;
         }
 
         let releaseIds: number[] | undefined;

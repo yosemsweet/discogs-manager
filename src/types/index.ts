@@ -28,6 +28,8 @@ export interface PlaylistFilter {
   minRating?: number;
   maxRating?: number;
   styles?: string[];
+  artists?: string[];
+  labels?: string[];
 }
 
 export interface ProgressInfo {
@@ -54,6 +56,7 @@ export interface StoredRelease {
   year: number;
   genres: string;
   styles: string;
+  labels?: string;
   condition?: string;
   rating?: number;
   addedAt: Date;

@@ -16,6 +16,14 @@ export class DatabaseManager {
 
   private initializeDatabase(): Promise<void> {
     return Promise.resolve().then(() => {
+      // Create schema version table first
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS schema_version (
+          version INTEGER PRIMARY KEY,
+          applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+
       // Create tables using synchronous API
       this.db.exec(`
         CREATE TABLE IF NOT EXISTS releases (
@@ -120,6 +128,12 @@ export class DatabaseManager {
         CREATE INDEX IF NOT EXISTS idx_dlq_username ON dlq(username);
         CREATE INDEX IF NOT EXISTS idx_track_matches_release ON track_matches(discogsReleaseId);
       `);
+
+      // Run database migration if needed
+      const currentVersion = this.getSchemaVersion();
+      if (currentVersion < 2) {
+        this.migrateToVersion2();
+      }
     });
   }
 
@@ -130,9 +144,9 @@ export class DatabaseManager {
         : release.addedAt || new Date().toISOString();
 
       const stmt = this.db.prepare(
-        `INSERT OR REPLACE INTO releases 
-        (discogsId, title, artists, year, genres, styles, condition, rating, addedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT OR REPLACE INTO releases
+        (discogsId, title, artists, year, genres, styles, labels, condition, rating, addedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       );
 
       stmt.run(
@@ -142,6 +156,7 @@ export class DatabaseManager {
         release.year,
         release.genres,
         release.styles,
+        release.labels || null,
         release.condition,
         release.rating,
         addedAtValue
@@ -459,5 +474,57 @@ export class DatabaseManager {
         // Ignore errors during close
       }
     });
+  }
+
+  /**
+   * Get current database schema version
+   * @returns Schema version number (0 if no version set)
+   */
+  private getSchemaVersion(): number {
+    try {
+      const result = this.db.prepare('SELECT version FROM schema_version ORDER BY version DESC LIMIT 1').get() as { version: number } | undefined;
+      return result ? result.version : 0;
+    } catch (err) {
+      // If table doesn't exist or query fails, assume version 0
+      return 0;
+    }
+  }
+
+  /**
+   * Set database schema version
+   * @param version - Version number to set
+   */
+  private setSchemaVersion(version: number): void {
+    this.db.prepare('INSERT OR REPLACE INTO schema_version (version) VALUES (?)').run(version);
+  }
+
+  /**
+   * Migrate database from version 1 to version 2
+   * Adds labels column to releases table and creates indexes
+   */
+  private migrateToVersion2(): void {
+    try {
+      console.log('Migrating database to version 2...');
+
+      // Add labels column to releases table
+      this.db.exec('ALTER TABLE releases ADD COLUMN labels TEXT');
+
+      // Create indexes for artists and labels
+      this.db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_releases_artists ON releases(artists);
+        CREATE INDEX IF NOT EXISTS idx_releases_labels ON releases(labels);
+      `);
+
+      // Update schema version
+      this.setSchemaVersion(2);
+
+      console.log('✓ Database migrated to version 2');
+      console.log('  - Added labels column to releases table');
+      console.log('  - Created indexes for artists and labels');
+      console.log('  - Tip: Run "npm run dev -- sync --force" to populate labels for existing releases');
+    } catch (err) {
+      console.error('Migration to version 2 failed:', err);
+      throw err;
+    }
   }
 }

@@ -18,6 +18,8 @@ export function createListCommand(discogsClient: DiscogsAPIClient, db: DatabaseM
     .option('--min-rating <rating>', 'Minimum rating (0-5)')
     .option('--max-rating <rating>', 'Maximum rating (0-5)')
     .option('-s, --styles <styles>', 'Filter by styles (comma-separated)')
+    .option('-a, --artists <artists>', 'Filter by artists (comma-separated)')
+    .option('-l, --labels <labels>', 'Filter by labels (comma-separated)')
     .option('--limit <limit>', 'Limit number of results', '50');
 
   cmd.action(async (username, options) => {
@@ -56,6 +58,24 @@ export function createListCommand(discogsClient: DiscogsAPIClient, db: DatabaseM
         options.styles = sanitized;
       }
 
+      // Sanitize artist options
+      if (options.artists) {
+        const sanitized = InputSanitizer.sanitizeSearchQuery(options.artists);
+        if (!sanitized) {
+          throw new ValidationError('artists', 'Artists filter sanitization failed');
+        }
+        options.artists = sanitized;
+      }
+
+      // Sanitize label options
+      if (options.labels) {
+        const sanitized = InputSanitizer.sanitizeSearchQuery(options.labels);
+        if (!sanitized) {
+          throw new ValidationError('labels', 'Labels filter sanitization failed');
+        }
+        options.labels = sanitized;
+      }
+
       // Validate options
       const validated = Validator.validateListOptions({
         username: username,
@@ -66,6 +86,8 @@ export function createListCommand(discogsClient: DiscogsAPIClient, db: DatabaseM
         minRating: options.minRating,
         maxRating: options.maxRating,
         styles: options.styles,
+        artists: options.artists,
+        labels: options.labels,
       });
 
       const collectionService = new CollectionService(discogsClient, db);

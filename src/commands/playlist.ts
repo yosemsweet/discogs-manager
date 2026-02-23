@@ -24,6 +24,9 @@ export function createPlaylistCommand(
     .option('-t, --title <title>', 'Playlist title')
     .option('-d, --description <description>', 'Playlist description')
     .option('-g, --genres <genres>', 'Comma-separated genres to include')
+    .option('-s, --styles <styles>', 'Comma-separated styles to include')
+    .option('-a, --artists <artists>', 'Comma-separated artists to include')
+    .option('-l, --labels <labels>', 'Comma-separated labels to include')
     .option('--release-ids <ids>', 'Comma-separated Discogs release IDs (for testing)')
     .option('--min-year <year>', 'Minimum year')
     .option('--max-year <year>', 'Maximum year')
@@ -56,6 +59,30 @@ export function createPlaylistCommand(
           throw new ValidationError('genres', 'Genres filter sanitization failed');
         }
         options.genres = sanitized;
+      }
+
+      if (options.styles) {
+        const sanitized = InputSanitizer.sanitizeSearchQuery(options.styles);
+        if (!sanitized) {
+          throw new ValidationError('styles', 'Styles filter sanitization failed');
+        }
+        options.styles = sanitized;
+      }
+
+      if (options.artists) {
+        const sanitized = InputSanitizer.sanitizeSearchQuery(options.artists);
+        if (!sanitized) {
+          throw new ValidationError('artists', 'Artists filter sanitization failed');
+        }
+        options.artists = sanitized;
+      }
+
+      if (options.labels) {
+        const sanitized = InputSanitizer.sanitizeSearchQuery(options.labels);
+        if (!sanitized) {
+          throw new ValidationError('labels', 'Labels filter sanitization failed');
+        }
+        options.labels = sanitized;
       }
 
       // Check for suspicious patterns

@@ -262,6 +262,105 @@ Core CLI, Discogs API integration, SoundCloud OAuth 2.1, rate limiting, database
 - Effective caching (4x speedup)
 - Well-documented and tested
 
+### Phase 6: Extended Playlist Filtering ✅ COMPLETE (NEW)
+
+**Goal:** Extend playlist and list commands to support filtering by style, artist, and label in addition to existing genre filtering.
+
+**Effort:** ~2-3 hours total implementation time
+
+**What Was Built:**
+
+1. **Database Schema Migration (Schema Version 2)**
+   - Added `schema_version` table to track migrations
+   - Implemented automatic inline migration on database initialization
+   - Added `labels` column to `releases` table (TEXT, nullable for backward compatibility)
+   - Created indexes: `idx_releases_artists`, `idx_releases_labels` for performance
+   - Migration runs once automatically on first command execution after upgrade
+   - Backward compatible: existing databases auto-migrate, existing code unaffected
+
+2. **Data Extraction**
+   - Updated `syncCollection()` to extract labels from Discogs API: `releaseDetails.labels.map(l => l.name).join(', ')`
+   - Updated `syncSpecificReleases()` with same labels extraction logic
+   - Gracefully handles missing labels (sets to undefined)
+   - Follows existing pattern: comma-separated string storage
+
+3. **Filtering Logic Updates**
+   - Extended `filterReleases()` in collection service:
+     - Added artists filter (OR logic: matches if any artist in filter list is found in release)
+     - Added labels filter (OR logic, null-safe: only filters releases with labels field)
+     - Updated progress tracking: totalSteps 6 → 8
+   - Pattern: `.filter(r => filter.artists!.some(a => r.artists.includes(a)))`
+   - Null-safe labels: `filter.labels!.some(l => r.labels && r.labels.includes(l))`
+
+4. **Type System Updates**
+   - Added to `PlaylistFilter` interface: `artists?: string[]`, `labels?: string[]`
+   - Added to `StoredRelease` interface: `labels?: string` (optional for backward compatibility)
+   - Styles already existed in StoredRelease, added to PlaylistFilter
+
+5. **Validation Layer**
+   - Updated `validatePlaylistOptions()`:
+     - Added styles validation (was missing!)
+     - Added artists validation
+     - Added labels validation
+     - Pattern: CSV parsing, trimming, max 100 chars per value
+   - Updated `validateListOptions()`:
+     - Added artists validation
+     - Added labels validation
+
+6. **Command Interface**
+   - Updated `playlist` command:
+     - Added options: `--styles`, `--artists`, `--labels`
+     - Added input sanitization using `InputSanitizer.sanitizeSearchQuery()`
+   - Updated `list` command:
+     - Added options: `--artists`, `--labels` (already had `--styles`)
+     - Added input sanitization for new options
+
+**Results:**
+- All 677/678 tests still passing
+- Database schema version 2 deployed successfully
+- Manual testing verified: artist filtering, style filtering working correctly
+- Labels filtering ready (will populate on next sync with `--force`)
+- No breaking changes, fully backward compatible
+
+**Usage Examples:**
+```bash
+# Filter by style
+npm run dev -- playlist -t "Alt Rock Mix" -s "Alternative Rock,Indie Rock"
+
+# Filter by artist
+npm run dev -- playlist -t "Beatles Collection" -a "The Beatles"
+
+# Filter by label
+npm run dev -- playlist -t "Blue Note Jazz" -l "Blue Note Records"
+
+# Combined filters
+npm run dev -- playlist -t "60s Jazz Masters" \
+  -a "Miles Davis,John Coltrane" \
+  -l "Blue Note,Columbia" \
+  --min-year 1960 --max-year 1969
+
+# List with new filters
+npm run dev -- list -a "Queen" -s "Classic Rock"
+npm run dev -- list -l "Blue Note Records"
+```
+
+**Files Modified:**
+1. `src/services/database.ts` - Schema versioning, migration to v2, labels column
+2. `src/types/index.ts` - Interface updates (PlaylistFilter, StoredRelease)
+3. `src/services/collection.ts` - Labels extraction, filtering logic
+4. `src/utils/validator.ts` - Validation for styles/artists/labels
+5. `src/commands/playlist.ts` - New command options and sanitization
+6. `src/commands/list.ts` - New command options and sanitization
+7. `README.md` - Documentation updates with usage examples
+
+**Database Schema Version History:**
+- Version 0: Initial schema (implicit, no versioning table)
+- Version 1: Original schema with releases, playlists, retry_queue, dlq, etc.
+- Version 2: Added `labels` column to releases, added artist/label indexes (February 22, 2026)
+
+**Note for Users:**
+After upgrading, run `npm run dev -- sync --force` to populate labels for existing releases. Without re-sync, only new releases will have label data.
+
 ---
 
 ## Outstanding Work
@@ -365,6 +464,11 @@ npm run dev -- auth  # Test OAuth
 # Test playlist creation with improved matching
 npm run dev -- playlist --title "My Rock" --genres "Rock"
 
+# Test new filtering options
+npm run dev -- list --artists "The Beatles"
+npm run dev -- list --labels "Blue Note Records"
+npm run dev -- playlist --title "Jazz Masters" --artists "Miles Davis" --labels "Columbia"
+
 # Set log level (default: info)
 LOG_LEVEL=debug npm run dev -- sync
 
@@ -431,6 +535,8 @@ Key Services:
 - Secure OAuth 2.1 with encrypted token storage
 - Intelligent track matching (73.7% accuracy)
 - Effective caching (4x speedup for repeated searches)
+- Extended playlist filtering (genres, styles, artists, labels, year, rating)
+- Database schema versioning with automatic migration
 - Structured logging with rotation
 - Well-documented codebase
 

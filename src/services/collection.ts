@@ -67,6 +67,9 @@ export class CollectionService {
             year: releaseDetails.year,
             genres: releaseDetails.genres.join(', '),
             styles: releaseDetails.styles.join(', '),
+            labels: releaseDetails.labels && releaseDetails.labels.length > 0
+              ? releaseDetails.labels.map((l: any) => l.name).join(', ')
+              : undefined,
             addedAt: new Date(),
           };
           await this.db.addRelease(storedRelease);
@@ -151,6 +154,9 @@ export class CollectionService {
             year: releaseDetails.year,
             genres: releaseDetails.genres.join(', '),
             styles: releaseDetails.styles.join(', '),
+            labels: releaseDetails.labels && releaseDetails.labels.length > 0
+              ? releaseDetails.labels.map((l: any) => l.name).join(', ')
+              : undefined,
             addedAt: new Date(),
           };
           await this.db.addRelease(storedRelease);
@@ -258,7 +264,7 @@ export class CollectionService {
     let releases = await this.db.getAllReleases();
     const totalReleases = releases.length;
     let currentStep = 0;
-    const totalSteps = 6; // genres, minYear, maxYear, minRating, maxRating, styles
+    const totalSteps = 8; // genres, minYear, maxYear, minRating, maxRating, styles, artists, labels
 
     onProgress({ stage: 'Loading releases', current: 0, total: totalReleases });
 
@@ -299,6 +305,22 @@ export class CollectionService {
       onProgress({ stage: `Filtering by styles ${filter.styles.join(', ')}`, current: currentStep, total: totalSteps });
       releases = releases.filter((r) =>
         filter.styles!.some((s) => r.styles.includes(s))
+      );
+    }
+
+    if (filter.artists && filter.artists.length > 0) {
+      currentStep++;
+      onProgress({ stage: `Filtering by artists ${filter.artists.join(', ')}`, current: currentStep, total: totalSteps });
+      releases = releases.filter((r) =>
+        filter.artists!.some((a) => r.artists.includes(a))
+      );
+    }
+
+    if (filter.labels && filter.labels.length > 0) {
+      currentStep++;
+      onProgress({ stage: `Filtering by labels ${filter.labels.join(', ')}`, current: currentStep, total: totalSteps });
+      releases = releases.filter((r) =>
+        filter.labels!.some((l) => r.labels && r.labels.includes(l))
       );
     }
 
