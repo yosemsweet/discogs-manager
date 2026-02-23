@@ -101,11 +101,24 @@ export class DatabaseManager {
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS track_matches (
+          discogsReleaseId INTEGER NOT NULL,
+          discogsTrackTitle TEXT NOT NULL,
+          soundcloudTrackId TEXT NOT NULL,
+          confidence REAL NOT NULL,
+          matchedTitle TEXT,
+          matchedArtist TEXT,
+          createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (discogsReleaseId, discogsTrackTitle),
+          FOREIGN KEY (discogsReleaseId) REFERENCES releases(discogsId)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_releases_year ON releases(year);
         CREATE INDEX IF NOT EXISTS idx_releases_genres ON releases(genres);
         CREATE INDEX IF NOT EXISTS idx_tracks_releaseId ON tracks(releaseId);
         CREATE INDEX IF NOT EXISTS idx_retry_queue_username ON retry_queue(username);
         CREATE INDEX IF NOT EXISTS idx_dlq_username ON dlq(username);
+        CREATE INDEX IF NOT EXISTS idx_track_matches_release ON track_matches(discogsReleaseId);
       `);
     });
   }
@@ -350,6 +363,91 @@ export class DatabaseManager {
       );
       const rows = stmt.all(releaseId) as Array<{ title: string; artists: string; position: string; duration: string }>;
       return rows || [];
+    });
+  }
+
+  /**
+   * Get cached track match from database
+   *
+   * @param releaseId - Discogs release ID
+   * @param trackTitle - Track title to lookup
+   * @returns Cached track match result or null if not found
+   */
+  getCachedTrackMatch(
+    releaseId: number,
+    trackTitle: string
+  ): Promise<{ soundcloudTrackId: string; confidence: number; matchedTitle: string } | null> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(
+        `SELECT soundcloudTrackId, confidence, matchedTitle
+         FROM track_matches
+         WHERE discogsReleaseId = ? AND discogsTrackTitle = ?`
+      );
+      const result = stmt.get(releaseId, trackTitle) as any;
+
+      return result
+        ? {
+            soundcloudTrackId: result.soundcloudTrackId,
+            confidence: result.confidence,
+            matchedTitle: result.matchedTitle,
+          }
+        : null;
+    });
+  }
+
+  /**
+   * Save track match to cache
+   *
+   * @param releaseId - Discogs release ID
+   * @param trackTitle - Original track title from Discogs
+   * @param soundcloudTrackId - Matched SoundCloud track ID
+   * @param confidence - Match confidence score (0-1)
+   * @param matchedTitle - Title of matched SoundCloud track
+   * @param matchedArtist - Artist of matched SoundCloud track (optional)
+   */
+  saveCachedTrackMatch(
+    releaseId: number,
+    trackTitle: string,
+    soundcloudTrackId: string,
+    confidence: number,
+    matchedTitle: string,
+    matchedArtist?: string
+  ): Promise<void> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(
+        `INSERT OR REPLACE INTO track_matches
+         (discogsReleaseId, discogsTrackTitle, soundcloudTrackId, confidence, matchedTitle, matchedArtist)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      );
+
+      stmt.run(releaseId, trackTitle, soundcloudTrackId, confidence, matchedTitle, matchedArtist || null);
+    });
+  }
+
+  /**
+   * Clear all cached track matches (useful for testing or cache invalidation)
+   */
+  clearTrackMatchCache(): Promise<void> {
+    return Promise.resolve().then(() => {
+      this.db.prepare('DELETE FROM track_matches').run();
+    });
+  }
+
+  /**
+   * Get cache statistics
+   *
+   * @returns Object with cache size and average confidence
+   */
+  getTrackMatchCacheStats(): Promise<{ totalMatches: number; averageConfidence: number }> {
+    return Promise.resolve().then(() => {
+      const result = this.db.prepare(
+        `SELECT COUNT(*) as count, AVG(confidence) as avgConfidence FROM track_matches`
+      ).get() as any;
+
+      return {
+        totalMatches: result.count || 0,
+        averageConfidence: result.avgConfidence || 0,
+      };
     });
   }
 

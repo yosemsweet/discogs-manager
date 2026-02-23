@@ -309,7 +309,7 @@ describe('Integration Tests - End-to-End Workflows', () => {
           data: { id: 'playlist-1', title: 'Test Playlist' },
         }),
         get: jest.fn().mockResolvedValue({
-          data: { collection: [{ id: 'track-1' }] },
+          data: { collection: [{ id: 'track-1', title: 'Test Track 1' }] },
         }),
       } as any);
 
@@ -440,7 +440,7 @@ describe('Integration Tests - End-to-End Workflows', () => {
           },
         }),
         get: jest.fn().mockResolvedValue({
-          data: { collection: [{ id: 'track-1' }] },
+          data: { collection: [{ id: 'track-1', title: 'Track 1' }] },
         }),
       } as any);
 
