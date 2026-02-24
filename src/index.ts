@@ -18,7 +18,8 @@ dotenv.config();
 program
   .name('discogs-cli')
   .description('CLI for managing Discogs collections and creating SoundCloud playlists')
-  .version('1.0.0');
+  .version('1.0.0')
+  .enablePositionalOptions();
 
 // Initialize clients and database
 const discogsToken = process.env.DISCOGS_API_TOKEN;
@@ -36,15 +37,11 @@ if (!discogsToken || !discogsUsername) {
 
 const discogsClient = new DiscogsAPIClient(discogsToken, discogsUsername);
 
-// Initialize SoundCloud client only if access token is provided
+// Initialize SoundCloud client only if access token is provided via env var.
+// If not, playlist/review commands will lazy-load the OAuth token from the database.
 let soundcloudClient: SoundCloudAPIClient | null = null;
 if (soundcloudAccessToken) {
   soundcloudClient = new SoundCloudAPIClient(soundcloudAccessToken);
-} else {
-  console.warn(
-    chalk.yellow('⚠️  SoundCloud access token not found. Playlist features will be unavailable.')
-  );
-  console.log(chalk.gray('   To authenticate with SoundCloud, run: npm run dev -- auth'));
 }
 
 const db = new DatabaseManager(dbPath);

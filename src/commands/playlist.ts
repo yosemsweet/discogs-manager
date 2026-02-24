@@ -22,6 +22,7 @@ export function createPlaylistCommand(
 ) {
   const cmd = new Command('playlist')
     .description('Create SoundCloud playlists from your collection')
+    .enablePositionalOptions()
     .option('-t, --title <title>', 'Playlist title')
     .option('-d, --description <description>', 'Playlist description')
     .option('-g, --genres <genres>', 'Comma-separated genres to include')
