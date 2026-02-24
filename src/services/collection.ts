@@ -229,9 +229,18 @@ export class CollectionService {
             year: releaseDetails.year,
             genres: releaseDetails.genres.join(', '),
             styles: releaseDetails.styles.join(', '),
+            labels: releaseDetails.labels && releaseDetails.labels.length > 0
+              ? releaseDetails.labels.map((l: any) => l.name).join(', ')
+              : undefined,
             addedAt: new Date(),
           };
           await this.db.addRelease(storedRelease);
+
+          // Also store the tracklist (previously missing from retry queue processing)
+          if (releaseDetails.tracklist && Array.isArray(releaseDetails.tracklist)) {
+            await this.db.addTracks(releaseDetails.id, releaseDetails.tracklist);
+          }
+
           await this.db.removeFromRetryQueue(item.releaseId, username);
           successCount++;
           Logger.info(`Successfully retried release ${item.releaseId}`);
@@ -268,12 +277,21 @@ export class CollectionService {
 
     onProgress({ stage: 'Loading releases', current: 0, total: totalReleases });
 
+    // Case-insensitive item-level matcher for comma-separated stored fields.
+    // Splits the stored value on commas and checks if any individual item matches
+    // any of the filter values. This prevents "Rock" from matching "Hard Rock" or
+    // "Post-Rock" via substring inclusion.
+    const matchesAnyItem = (stored: string | undefined | null, filterValues: string[]): boolean => {
+      if (!stored) return false;
+      const storedItems = stored.split(',').map(s => s.trim().toLowerCase());
+      const lowerFilters = filterValues.map(f => f.trim().toLowerCase());
+      return storedItems.some(item => lowerFilters.includes(item));
+    };
+
     if (filter.genres && filter.genres.length > 0) {
       currentStep++;
       onProgress({ stage: `Filtering by genres ${filter.genres.join(', ')}`, current: currentStep, total: totalSteps });
-      releases = releases.filter((r) =>
-        filter.genres!.some((g) => r.genres.includes(g))
-      );
+      releases = releases.filter((r) => matchesAnyItem(r.genres, filter.genres!));
     }
 
     if (filter.minYear) {
@@ -303,25 +321,19 @@ export class CollectionService {
     if (filter.styles && filter.styles.length > 0) {
       currentStep++;
       onProgress({ stage: `Filtering by styles ${filter.styles.join(', ')}`, current: currentStep, total: totalSteps });
-      releases = releases.filter((r) =>
-        filter.styles!.some((s) => r.styles.includes(s))
-      );
+      releases = releases.filter((r) => matchesAnyItem(r.styles, filter.styles!));
     }
 
     if (filter.artists && filter.artists.length > 0) {
       currentStep++;
       onProgress({ stage: `Filtering by artists ${filter.artists.join(', ')}`, current: currentStep, total: totalSteps });
-      releases = releases.filter((r) =>
-        filter.artists!.some((a) => r.artists.includes(a))
-      );
+      releases = releases.filter((r) => matchesAnyItem(r.artists, filter.artists!));
     }
 
     if (filter.labels && filter.labels.length > 0) {
       currentStep++;
       onProgress({ stage: `Filtering by labels ${filter.labels.join(', ')}`, current: currentStep, total: totalSteps });
-      releases = releases.filter((r) =>
-        filter.labels!.some((l) => r.labels && r.labels.includes(l))
-      );
+      releases = releases.filter((r) => matchesAnyItem(r.labels, filter.labels!));
     }
 
     onProgress({ stage: 'Filtering complete', current: totalSteps, total: totalSteps, message: `Found ${releases.length} matching releases` });

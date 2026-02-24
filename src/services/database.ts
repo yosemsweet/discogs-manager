@@ -121,18 +121,39 @@ export class DatabaseManager {
           FOREIGN KEY (discogsReleaseId) REFERENCES releases(discogsId)
         );
 
+        CREATE TABLE IF NOT EXISTS unmatched_tracks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          playlistTitle TEXT NOT NULL,
+          discogsReleaseId INTEGER NOT NULL,
+          discogsTrackTitle TEXT NOT NULL,
+          discogsArtist TEXT,
+          discogsDuration TEXT,
+          releaseTitle TEXT,
+          topCandidatesJson TEXT,
+          strategiesTriedCount INTEGER DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'pending',
+          resolvedTrackId TEXT,
+          resolvedAt DATETIME,
+          createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (discogsReleaseId) REFERENCES releases(discogsId)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_releases_year ON releases(year);
         CREATE INDEX IF NOT EXISTS idx_releases_genres ON releases(genres);
         CREATE INDEX IF NOT EXISTS idx_tracks_releaseId ON tracks(releaseId);
         CREATE INDEX IF NOT EXISTS idx_retry_queue_username ON retry_queue(username);
         CREATE INDEX IF NOT EXISTS idx_dlq_username ON dlq(username);
         CREATE INDEX IF NOT EXISTS idx_track_matches_release ON track_matches(discogsReleaseId);
+        CREATE INDEX IF NOT EXISTS idx_unmatched_playlist ON unmatched_tracks(playlistTitle, status);
       `);
 
-      // Run database migration if needed
+      // Run database migrations if needed
       const currentVersion = this.getSchemaVersion();
       if (currentVersion < 2) {
         this.migrateToVersion2();
+      }
+      if (currentVersion < 3) {
+        this.migrateToVersion3();
       }
     });
   }
@@ -526,5 +547,140 @@ export class DatabaseManager {
       console.error('Migration to version 2 failed:', err);
       throw err;
     }
+  }
+
+  /**
+   * Migrate database from version 2 to version 3
+   * Adds unmatched_tracks table for manual review queue
+   */
+  private migrateToVersion3(): void {
+    try {
+      console.log('Migrating database to version 3...');
+
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS unmatched_tracks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          playlistTitle TEXT NOT NULL,
+          discogsReleaseId INTEGER NOT NULL,
+          discogsTrackTitle TEXT NOT NULL,
+          discogsArtist TEXT,
+          discogsDuration TEXT,
+          releaseTitle TEXT,
+          topCandidatesJson TEXT,
+          strategiesTriedCount INTEGER DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'pending',
+          resolvedTrackId TEXT,
+          resolvedAt DATETIME,
+          createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (discogsReleaseId) REFERENCES releases(discogsId)
+        );
+        CREATE INDEX IF NOT EXISTS idx_unmatched_playlist ON unmatched_tracks(playlistTitle, status);
+      `);
+
+      this.setSchemaVersion(3);
+
+      console.log('✓ Database migrated to version 3');
+      console.log('  - Added unmatched_tracks table for manual review queue');
+    } catch (err) {
+      console.error('Migration to version 3 failed:', err);
+      throw err;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Unmatched tracks — manual review queue
+  // ---------------------------------------------------------------------------
+
+  saveUnmatchedTrack(params: {
+    playlistTitle: string;
+    discogsReleaseId: number;
+    discogsTrackTitle: string;
+    discogsArtist?: string | null;
+    discogsDuration?: string | null;
+    releaseTitle?: string | null;
+    topCandidatesJson?: string | null;
+    strategiesTriedCount?: number;
+  }): Promise<void> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(`
+        INSERT OR REPLACE INTO unmatched_tracks
+          (playlistTitle, discogsReleaseId, discogsTrackTitle, discogsArtist, discogsDuration,
+           releaseTitle, topCandidatesJson, strategiesTriedCount, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      `);
+      stmt.run(
+        params.playlistTitle,
+        params.discogsReleaseId,
+        params.discogsTrackTitle,
+        params.discogsArtist || null,
+        params.discogsDuration || null,
+        params.releaseTitle || null,
+        params.topCandidatesJson || null,
+        params.strategiesTriedCount ?? 0
+      );
+    });
+  }
+
+  getUnmatchedTracks(playlistTitle: string, status: 'pending' | 'resolved' | 'skipped' = 'pending'): Promise<Array<{
+    id: number;
+    playlistTitle: string;
+    discogsReleaseId: number;
+    discogsTrackTitle: string;
+    discogsArtist: string | null;
+    discogsDuration: string | null;
+    releaseTitle: string | null;
+    topCandidatesJson: string | null;
+    strategiesTriedCount: number;
+    status: string;
+    resolvedTrackId: string | null;
+    resolvedAt: string | null;
+    createdAt: string;
+  }>> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(`
+        SELECT * FROM unmatched_tracks
+        WHERE playlistTitle = ? AND status = ?
+        ORDER BY createdAt ASC
+      `);
+      return (stmt.all(playlistTitle, status) as any[]) || [];
+    });
+  }
+
+  resolveUnmatchedTrack(id: number, soundcloudTrackId: string): Promise<void> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(`
+        UPDATE unmatched_tracks
+        SET status = 'resolved', resolvedTrackId = ?, resolvedAt = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `);
+      stmt.run(soundcloudTrackId, id);
+    });
+  }
+
+  skipUnmatchedTrack(id: number): Promise<void> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(`
+        UPDATE unmatched_tracks SET status = 'skipped' WHERE id = ?
+      `);
+      stmt.run(id);
+    });
+  }
+
+  countUnmatchedTracks(playlistTitle: string): Promise<{ pending: number; resolved: number; skipped: number }> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(`
+        SELECT status, COUNT(*) as count FROM unmatched_tracks
+        WHERE playlistTitle = ?
+        GROUP BY status
+      `);
+      const rows = (stmt.all(playlistTitle) as Array<{ status: string; count: number }>) || [];
+      const result = { pending: 0, resolved: 0, skipped: 0 };
+      for (const row of rows) {
+        if (row.status === 'pending') result.pending = row.count;
+        else if (row.status === 'resolved') result.resolved = row.count;
+        else if (row.status === 'skipped') result.skipped = row.count;
+      }
+      return result;
+    });
   }
 }

@@ -29,6 +29,8 @@ export class QueryNormalizer {
       .trim()
       // Remove common parentheticals that reduce match quality
       .replace(/\(.*?(remaster|remix|edit|version|radio|album|single|explicit|clean).*?\)/gi, '')
+      // Remove dash-prefixed version qualifiers (e.g. "Title - Remastered 2009", "Title - Live")
+      .replace(/\s+-\s+(remaster(ed)?|remix|edit|live|version|radio|album|single|explicit|clean)(\s+\S+)*/gi, '')
       // Remove featuring information in parentheses/brackets (we'll add artist separately)
       .replace(/[\(\[]?\s*(?:feat\.?|ft\.?|featuring)\s+[^\)\]]+[\)\]]?/gi, '')
       // Remove square brackets with content

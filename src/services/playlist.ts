@@ -38,7 +38,7 @@ export class PlaylistService {
     releases: StoredRelease[],
     description?: string,
     onProgress: ProgressCallback = noopProgress
-  ) {
+  ): Promise<{ id: string | number; trackCount: number }> {
     try {
       // Check rate limit before starting
       if (this.rateLimitService && this.rateLimitService.isLimitExceeded()) {
@@ -59,8 +59,8 @@ export class PlaylistService {
 
       onProgress({ stage: 'Fetching tracklists', current: 0, total: releases.length, message: title });
 
-      // Search for tracks on SoundCloud
-      const trackData = await this.trackSearchService.searchTracksForReleases(releases, onProgress);
+      // Search for tracks on SoundCloud, associating unmatched tracks with this playlist title
+      const trackData = await this.trackSearchService.searchTracksForReleases(releases, onProgress, title);
 
       const validTrackIds = trackData.map((t) => t.trackId);
 
@@ -89,10 +89,10 @@ export class PlaylistService {
         stage: 'Playlist created',
         current: releases.length,
         total: releases.length,
-        message: `Added ${validTrackIds.length} individual tracks from ${releases.length} releases to "${title}"`,
+        message: `Added ${validTrackIds.length} tracks from ${releases.length} releases to "${title}"`,
       });
 
-      return playlist;
+      return { id: playlist.id, trackCount: validTrackIds.length };
     } catch (error) {
       throw new Error(`Failed to create playlist: ${error}`);
     }
@@ -103,7 +103,7 @@ export class PlaylistService {
     title: string,
     releases: StoredRelease[],
     onProgress: ProgressCallback
-  ) {
+  ): Promise<{ id: string | number; trackCount: number }> {
     onProgress({ stage: 'Updating playlist', current: 0, total: releases.length, message: title });
 
     // Fetch existing tracks in playlist from database
@@ -120,13 +120,13 @@ export class PlaylistService {
         total: releases.length,
         message: `No new tracks to add to "${title}"`,
       });
-      return await this.soundcloudClient.getPlaylist(playlistId);
+      return { id: playlistId, trackCount: existingPlaylistTracks.length };
     }
 
     onProgress({ stage: 'Fetching tracklists', current: 0, total: newReleases.length, message: title });
 
-    // Search for new tracks on SoundCloud
-    const newTrackData = await this.trackSearchService.searchTracksForReleases(newReleases, onProgress);
+    // Search for new tracks on SoundCloud, associating unmatched tracks with this playlist
+    const newTrackData = await this.trackSearchService.searchTracksForReleases(newReleases, onProgress, title);
 
     const newTrackIds = newTrackData.map((t) => t.trackId);
 
@@ -137,7 +137,7 @@ export class PlaylistService {
         total: releases.length,
         message: `No new SoundCloud tracks found to add to "${title}"`,
       });
-      return await this.soundcloudClient.getPlaylist(playlistId);
+      return { id: playlistId, trackCount: existingPlaylistTracks.length };
     }
 
     // Add new tracks to existing playlist with batching
@@ -159,10 +159,10 @@ export class PlaylistService {
       stage: 'Playlist updated',
       current: newReleases.length,
       total: newReleases.length,
-      message: `Added ${newTrackIds.length} individual tracks from ${newReleases.length} new releases to "${title}"`,
+      message: `Added ${newTrackIds.length} tracks from ${newReleases.length} new releases to "${title}"`,
     });
 
-    return await this.soundcloudClient.getPlaylist(playlistId);
+    return { id: playlistId, trackCount: existingPlaylistTracks.length + newTrackIds.length };
   }
 
   async getPlaylistInfo(playlistId: string) {

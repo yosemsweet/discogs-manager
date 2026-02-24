@@ -6,11 +6,13 @@
  *
  * Uses multiple scoring factors:
  * - Title similarity (Dice coefficient + Levenshtein distance)
- * - Artist similarity
+ * - Artist similarity (note: SoundCloud user.username is the uploader handle, not the
+ *   canonical artist name — this dimension is a weaker signal than title)
  * - Duration matching
  *
  * Returns confidence scores (0-1) for each match.
  */
+import { QueryNormalizer } from '../utils/query-normalizer';
 
 export interface MatchCandidate {
   id: string;
@@ -19,19 +21,31 @@ export interface MatchCandidate {
   duration?: number; // Duration in milliseconds
 }
 
+export interface MatchScoreBreakdown {
+  titleScore: number;
+  artistScore: number;
+  durationScore: number;
+  titleWeight: number;
+  artistWeight: number;
+  durationWeight: number;
+  weightsUsed: number;
+}
+
 export interface MatchResult {
   trackId: string;
   discogsId: number;
   confidence: number;
   matchedTitle: string;
   matchedArtist?: string;
+  scoreBreakdown?: MatchScoreBreakdown;
 }
 
 export class TrackMatcher {
-  // Configurable thresholds
-  private static readonly CONFIDENCE_THRESHOLD = 0.6;
-  private static readonly TITLE_WEIGHT = 0.5;
-  private static readonly ARTIST_WEIGHT = 0.3;
+  // Configurable thresholds (non-readonly so setConfidenceThreshold works without casting)
+  private static CONFIDENCE_THRESHOLD = 0.6;
+  // Title is the strongest signal; artist (user.username = uploader handle) is weaker
+  private static readonly TITLE_WEIGHT = 0.6;
+  private static readonly ARTIST_WEIGHT = 0.2;
   private static readonly DURATION_WEIGHT = 0.2;
 
   /**
@@ -47,28 +61,35 @@ export class TrackMatcher {
     const s1 = str1.toLowerCase();
     const s2 = str2.toLowerCase();
 
-    // Generate bigrams (2-character pairs)
-    const bigrams1 = new Set<string>();
-    const bigrams2 = new Set<string>();
-
-    for (let i = 0; i < s1.length - 1; i++) {
-      bigrams1.add(s1.substring(i, i + 2));
-    }
-
-    for (let i = 0; i < s2.length - 1; i++) {
-      bigrams2.add(s2.substring(i, i + 2));
-    }
-
-    // Calculate intersection
-    let intersection = 0;
-    for (const bigram of bigrams1) {
-      if (bigrams2.has(bigram)) {
-        intersection++;
+    // Generate bigrams (2-character pairs) as multisets (Map counts occurrences)
+    // Using Map instead of Set preserves repeated bigrams, e.g. "aaa" → {"aa": 2}
+    const buildBigrams = (s: string): Map<string, number> => {
+      const map = new Map<string, number>();
+      for (let i = 0; i < s.length - 1; i++) {
+        const bg = s.substring(i, i + 2);
+        map.set(bg, (map.get(bg) || 0) + 1);
       }
+      return map;
+    };
+
+    const bigrams1 = buildBigrams(s1);
+    const bigrams2 = buildBigrams(s2);
+
+    // Total bigram counts
+    const total1 = Array.from(bigrams1.values()).reduce((a, b) => a + b, 0);
+    const total2 = Array.from(bigrams2.values()).reduce((a, b) => a + b, 0);
+
+    if (total1 === 0 || total2 === 0) return 0;
+
+    // Intersection: sum of min(count in s1, count in s2) for each bigram
+    let intersection = 0;
+    for (const [bigram, count1] of bigrams1) {
+      const count2 = bigrams2.get(bigram) || 0;
+      intersection += Math.min(count1, count2);
     }
 
-    // Dice coefficient: 2 * |intersection| / (|set1| + |set2|)
-    return (2 * intersection) / (bigrams1.size + bigrams2.size);
+    // Dice coefficient: 2 * |intersection| / (|multiset1| + |multiset2|)
+    return (2 * intersection) / (total1 + total2);
   }
 
   /**
@@ -171,63 +192,87 @@ export class TrackMatcher {
   }
 
   /**
-   * Score a candidate track against the expected track using multiple factors
+   * Score a candidate track against the expected track using multiple factors.
+   *
+   * Normalizes both Discogs and SoundCloud strings before comparison so that
+   * parentheticals like "(Remastered 2009)" or "[feat. X]" don't deflate scores.
+   *
+   * Note: candidate.user.username is the SoundCloud uploader handle, NOT a canonical
+   * artist name. Artist similarity is a weaker signal and weighted accordingly (0.2).
    *
    * @param expectedTitle - Expected track title from Discogs
    * @param expectedArtist - Expected artist name from Discogs
    * @param expectedDuration - Expected duration in "MM:SS" format (or null)
    * @param candidate - Candidate track from SoundCloud search results
-   * @returns Confidence score from 0 to 1
+   * @returns Object with confidence (0-1) and per-dimension score breakdown
    */
   static scoreMatch(
     expectedTitle: string,
     expectedArtist: string,
     expectedDuration: string | null,
     candidate: MatchCandidate
-  ): number {
+  ): { confidence: number; breakdown: MatchScoreBreakdown } {
     let score = 0;
     let totalWeight = 0;
 
-    // 1. Title similarity (most important)
-    if (expectedTitle && candidate.title) {
-      const titleSimilarity = this.calculateStringSimilarity(
-        expectedTitle,
-        candidate.title
-      );
-      score += titleSimilarity * this.TITLE_WEIGHT;
+    let titleScore = 0;
+    let artistScore = 0;
+    let durationScore = 0;
+
+    // Normalize both sides before comparison so "(Remastered)" etc. don't deflate scores
+    const normExpectedTitle = QueryNormalizer.normalizeTrackTitle(expectedTitle);
+    const normCandidateTitle = candidate.title
+      ? QueryNormalizer.normalizeTrackTitle(candidate.title)
+      : '';
+
+    // 1. Title similarity (strongest signal)
+    if (normExpectedTitle && normCandidateTitle) {
+      titleScore = this.calculateStringSimilarity(normExpectedTitle, normCandidateTitle);
+      score += titleScore * this.TITLE_WEIGHT;
       totalWeight += this.TITLE_WEIGHT;
     }
 
-    // 2. Artist similarity (important for disambiguation)
+    // 2. Artist similarity (weaker signal: user.username is the uploader handle)
     if (expectedArtist && candidate.user?.username) {
-      const artistSimilarity = this.calculateStringSimilarity(
-        expectedArtist,
-        candidate.user.username
-      );
-      score += artistSimilarity * this.ARTIST_WEIGHT;
+      const normExpectedArtist = QueryNormalizer.normalizeArtistName(expectedArtist);
+      const normCandidateUser = QueryNormalizer.normalizeArtistName(candidate.user.username);
+      artistScore = this.calculateStringSimilarity(normExpectedArtist, normCandidateUser);
+      score += artistScore * this.ARTIST_WEIGHT;
       totalWeight += this.ARTIST_WEIGHT;
     }
 
-    // 3. Duration matching (helps validate correct version)
+    // 3. Duration matching (helps validate correct version/edit)
     if (expectedDuration && candidate.duration) {
       const expectedSeconds = this.parseDiscogsDuration(expectedDuration);
       const candidateSeconds = Math.floor(candidate.duration / 1000);
 
       if (expectedSeconds > 0 && candidateSeconds > 0) {
-        // Calculate duration difference as percentage
+        // Calculate duration difference as a fraction of expected duration
         const variance = Math.abs(expectedSeconds - candidateSeconds) / expectedSeconds;
 
-        // Allow up to 10% variance (accounts for different versions, fades, etc.)
-        // Score: 1.0 for exact match, 0.0 for >10% difference
-        const durationScore = Math.max(0, 1 - (variance * 10));
+        // Allow up to 20% variance (accounts for different edits, fades, intros)
+        // Score: 1.0 for exact match, 0.0 for ≥20% difference (linear)
+        durationScore = Math.max(0, 1 - (variance * 5));
 
         score += durationScore * this.DURATION_WEIGHT;
         totalWeight += this.DURATION_WEIGHT;
       }
     }
 
-    // Normalize score to 0-1 range based on weights used
-    return totalWeight > 0 ? score / totalWeight : 0;
+    // Normalize score to 0-1 based on which dimensions were available
+    const confidence = totalWeight > 0 ? score / totalWeight : 0;
+
+    const breakdown: MatchScoreBreakdown = {
+      titleScore,
+      artistScore,
+      durationScore,
+      titleWeight: this.TITLE_WEIGHT,
+      artistWeight: this.ARTIST_WEIGHT,
+      durationWeight: this.DURATION_WEIGHT,
+      weightsUsed: totalWeight,
+    };
+
+    return { confidence, breakdown };
   }
 
   /**
@@ -244,33 +289,36 @@ export class TrackMatcher {
     expectedArtist: string,
     expectedDuration: string | null,
     candidates: MatchCandidate[]
-  ): { candidate: MatchCandidate; confidence: number } | null {
+  ): { candidate: MatchCandidate; confidence: number; breakdown: MatchScoreBreakdown } | null {
     if (!candidates || candidates.length === 0) {
       return null;
     }
 
     let bestCandidate: MatchCandidate | null = null;
     let bestScore = 0;
+    let bestBreakdown: MatchScoreBreakdown | null = null;
 
     for (const candidate of candidates) {
-      const score = this.scoreMatch(
+      const { confidence, breakdown } = this.scoreMatch(
         expectedTitle,
         expectedArtist,
         expectedDuration,
         candidate
       );
 
-      if (score > bestScore) {
-        bestScore = score;
+      if (confidence > bestScore) {
+        bestScore = confidence;
         bestCandidate = candidate;
+        bestBreakdown = breakdown;
       }
     }
 
     // Only return match if confidence exceeds threshold
-    if (bestScore >= this.CONFIDENCE_THRESHOLD && bestCandidate) {
+    if (bestScore >= this.CONFIDENCE_THRESHOLD && bestCandidate && bestBreakdown) {
       return {
         candidate: bestCandidate,
         confidence: bestScore,
+        breakdown: bestBreakdown,
       };
     }
 
@@ -294,26 +342,23 @@ export class TrackMatcher {
     expectedDuration: string | null,
     candidates: MatchCandidate[],
     threshold: number = 0.6
-  ): Array<{ candidate: MatchCandidate; confidence: number }> {
+  ): Array<{ candidate: MatchCandidate; confidence: number; breakdown: MatchScoreBreakdown }> {
     if (!candidates || candidates.length === 0) {
       return [];
     }
 
-    const matches: Array<{ candidate: MatchCandidate; confidence: number }> = [];
+    const matches: Array<{ candidate: MatchCandidate; confidence: number; breakdown: MatchScoreBreakdown }> = [];
 
     for (const candidate of candidates) {
-      const score = this.scoreMatch(
+      const { confidence, breakdown } = this.scoreMatch(
         expectedTitle,
         expectedArtist,
         expectedDuration,
         candidate
       );
 
-      if (score >= threshold) {
-        matches.push({
-          candidate,
-          confidence: score,
-        });
+      if (confidence >= threshold) {
+        matches.push({ candidate, confidence, breakdown });
       }
     }
 
@@ -334,7 +379,7 @@ export class TrackMatcher {
    */
   static setConfidenceThreshold(threshold: number): void {
     if (threshold >= 0 && threshold <= 1) {
-      (this as any).CONFIDENCE_THRESHOLD = threshold;
+      this.CONFIDENCE_THRESHOLD = threshold;
     }
   }
 }

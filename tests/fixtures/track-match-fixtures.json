@@ -1,0 +1,202 @@
+[
+  {
+    "description": "Exact title and artist match",
+    "discogsTitle": "Bohemian Rhapsody",
+    "discogsArtist": "Queen",
+    "discogsDuration": "5:54",
+    "soundcloudTitle": "Bohemian Rhapsody",
+    "soundcloudUsername": "Queen",
+    "soundcloudDurationMs": 354000,
+    "expectMatch": true
+  },
+  {
+    "description": "Remastered suffix on SoundCloud side",
+    "discogsTitle": "Let It Be",
+    "discogsArtist": "The Beatles",
+    "discogsDuration": "4:03",
+    "soundcloudTitle": "Let It Be - Remastered 2009",
+    "soundcloudUsername": "The Beatles - Topic",
+    "soundcloudDurationMs": 243000,
+    "expectMatch": true
+  },
+  {
+    "description": "Discogs has remaster info, SoundCloud has clean title",
+    "discogsTitle": "Love Me Do (Remastered 2009)",
+    "discogsArtist": "The Beatles",
+    "discogsDuration": "2:23",
+    "soundcloudTitle": "Love Me Do",
+    "soundcloudUsername": "thebeatles",
+    "soundcloudDurationMs": 143000,
+    "expectMatch": true
+  },
+  {
+    "description": "Stairway to Heaven studio version vs correct duration",
+    "discogsTitle": "Stairway to Heaven",
+    "discogsArtist": "Led Zeppelin",
+    "discogsDuration": "8:02",
+    "soundcloudTitle": "Stairway to Heaven (Remaster)",
+    "soundcloudUsername": "Led Zeppelin",
+    "soundcloudDurationMs": 482000,
+    "expectMatch": true
+  },
+  {
+    "description": "Empire State of Mind correct match",
+    "discogsTitle": "Empire State of Mind",
+    "discogsArtist": "JAY-Z",
+    "discogsDuration": "4:36",
+    "soundcloudTitle": "Empire State of Mind",
+    "soundcloudUsername": "JAY-Z",
+    "soundcloudDurationMs": 276000,
+    "expectMatch": true
+  },
+  {
+    "description": "Yesterday exact match",
+    "discogsTitle": "Yesterday",
+    "discogsArtist": "The Beatles",
+    "discogsDuration": "2:06",
+    "soundcloudTitle": "Yesterday",
+    "soundcloudUsername": "The Beatles",
+    "soundcloudDurationMs": 126000,
+    "expectMatch": true
+  },
+  {
+    "description": "Hey Jude with correct duration",
+    "discogsTitle": "Hey Jude",
+    "discogsArtist": "The Beatles",
+    "discogsDuration": "7:11",
+    "soundcloudTitle": "Hey Jude",
+    "soundcloudUsername": "The Beatles",
+    "soundcloudDurationMs": 431000,
+    "expectMatch": true
+  },
+  {
+    "description": "Different song — should NOT match",
+    "discogsTitle": "Bohemian Rhapsody",
+    "discogsArtist": "Queen",
+    "discogsDuration": "5:54",
+    "soundcloudTitle": "We Will Rock You",
+    "soundcloudUsername": "Queen",
+    "soundcloudDurationMs": 122000,
+    "expectMatch": false
+  },
+  {
+    "description": "Completely unrelated track — should NOT match",
+    "discogsTitle": "Stairway to Heaven",
+    "discogsArtist": "Led Zeppelin",
+    "discogsDuration": "8:02",
+    "soundcloudTitle": "Smells Like Teen Spirit",
+    "soundcloudUsername": "Nirvana",
+    "soundcloudDurationMs": 301000,
+    "expectMatch": false
+  },
+  {
+    "description": "Minor title variation with same artist",
+    "discogsTitle": "Purple Rain",
+    "discogsArtist": "Prince",
+    "discogsDuration": "8:41",
+    "soundcloudTitle": "Purple Rain (Live)",
+    "soundcloudUsername": "Prince",
+    "soundcloudDurationMs": 521000,
+    "expectMatch": true
+  },
+  {
+    "description": "Track only differs in live suffix",
+    "discogsTitle": "Comfortably Numb",
+    "discogsArtist": "Pink Floyd",
+    "discogsDuration": "6:22",
+    "soundcloudTitle": "Comfortably Numb",
+    "soundcloudUsername": "Pink Floyd",
+    "soundcloudDurationMs": 382000,
+    "expectMatch": true
+  },
+  {
+    "description": "Different artist same song title — should NOT match",
+    "discogsTitle": "Yesterday",
+    "discogsArtist": "The Beatles",
+    "discogsDuration": "2:06",
+    "soundcloudTitle": "Yesterday",
+    "soundcloudUsername": "CoverArtistXYZ",
+    "soundcloudDurationMs": 240000,
+    "expectMatch": false
+  },
+  {
+    "description": "Song with featuring artist in Discogs title",
+    "discogsTitle": "Gold Digger (feat. Jamie Foxx)",
+    "discogsArtist": "Kanye West",
+    "discogsDuration": "3:28",
+    "soundcloudTitle": "Gold Digger",
+    "soundcloudUsername": "Kanye West",
+    "soundcloudDurationMs": 208000,
+    "expectMatch": true
+  },
+  {
+    "description": "Longer duration gap (live version) — borderline",
+    "discogsTitle": "Bohemian Rhapsody",
+    "discogsArtist": "Queen",
+    "discogsDuration": "5:54",
+    "soundcloudTitle": "Bohemian Rhapsody - Live at Wembley 1986",
+    "soundcloudUsername": "Queen",
+    "soundcloudDurationMs": 375000,
+    "expectMatch": true
+  },
+  {
+    "description": "Completely wrong song — definitely should NOT match",
+    "discogsTitle": "Hotel California",
+    "discogsArtist": "Eagles",
+    "discogsDuration": "6:30",
+    "soundcloudTitle": "Thunderstruck",
+    "soundcloudUsername": "ACDC",
+    "soundcloudDurationMs": 292000,
+    "expectMatch": false
+  },
+  {
+    "description": "Same title but very different duration — ambiguous",
+    "discogsTitle": "Heroes",
+    "discogsArtist": "David Bowie",
+    "discogsDuration": "3:32",
+    "soundcloudTitle": "Heroes (12 inch version)",
+    "soundcloudUsername": "David Bowie",
+    "soundcloudDurationMs": 384000,
+    "expectMatch": true
+  },
+  {
+    "description": "Non-match: title with no overlap",
+    "discogsTitle": "Thriller",
+    "discogsArtist": "Michael Jackson",
+    "discogsDuration": "5:57",
+    "soundcloudTitle": "Beat It",
+    "soundcloudUsername": "Michael Jackson",
+    "soundcloudDurationMs": 258000,
+    "expectMatch": false
+  },
+  {
+    "description": "Minor typo in SoundCloud title",
+    "discogsTitle": "Superstition",
+    "discogsArtist": "Stevie Wonder",
+    "discogsDuration": "3:52",
+    "soundcloudTitle": "Superstition",
+    "soundcloudUsername": "StevieWonder",
+    "soundcloudDurationMs": 232000,
+    "expectMatch": true
+  },
+  {
+    "description": "Track with subtitle on Discogs",
+    "discogsTitle": "A Day in the Life",
+    "discogsArtist": "The Beatles",
+    "discogsDuration": "5:39",
+    "soundcloudTitle": "A Day in the Life",
+    "soundcloudUsername": "Beatles",
+    "soundcloudDurationMs": 339000,
+    "expectMatch": true
+  },
+  {
+    "description": "Completely different track from same artist — should NOT match",
+    "discogsTitle": "Billie Jean",
+    "discogsArtist": "Michael Jackson",
+    "discogsDuration": "4:54",
+    "soundcloudTitle": "Smooth Criminal",
+    "soundcloudUsername": "Michael Jackson",
+    "soundcloudDurationMs": 257000,
+    "expectMatch": false
+  }
+]

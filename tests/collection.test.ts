@@ -371,4 +371,125 @@ describe('CollectionService', () => {
       expect(entries[2][1]).toBe(1);
     });
   });
+
+  describe('filterReleases — item-level and case-insensitive matching', () => {
+    const makeRelease = (id: number, overrides: Record<string, any>) => ({
+      discogsId: id,
+      title: `Album ${id}`,
+      artists: `Artist ${id}`,
+      year: 2020,
+      genres: '',
+      styles: '',
+      addedAt: new Date(),
+      ...overrides,
+    });
+
+    test('"Rock" filter does NOT match "Hard Rock" (substring false positive)', async () => {
+      const releases = [
+        makeRelease(1, { genres: 'Hard Rock' }),
+        makeRelease(2, { genres: 'Rock' }),
+        makeRelease(3, { genres: 'Post-Rock' }),
+      ];
+      (dbMock.getAllReleases as jest.Mock).mockResolvedValue(releases);
+
+      const filtered = await collectionService.filterReleases({ genres: ['Rock'] });
+
+      expect(filtered).toHaveLength(1);
+      expect(filtered[0].discogsId).toBe(2);
+    });
+
+    test('"Rock" filter matches release with genres "Electronic, Rock"', async () => {
+      const releases = [
+        makeRelease(1, { genres: 'Electronic, Rock' }),
+        makeRelease(2, { genres: 'Jazz' }),
+      ];
+      (dbMock.getAllReleases as jest.Mock).mockResolvedValue(releases);
+
+      const filtered = await collectionService.filterReleases({ genres: ['Rock'] });
+
+      expect(filtered).toHaveLength(1);
+      expect(filtered[0].discogsId).toBe(1);
+    });
+
+    test('filter is case-insensitive: "rock" matches stored "Rock"', async () => {
+      const releases = [
+        makeRelease(1, { genres: 'Rock' }),
+        makeRelease(2, { genres: 'Jazz' }),
+      ];
+      (dbMock.getAllReleases as jest.Mock).mockResolvedValue(releases);
+
+      const filtered = await collectionService.filterReleases({ genres: ['rock'] });
+
+      expect(filtered).toHaveLength(1);
+      expect(filtered[0].discogsId).toBe(1);
+    });
+
+    test('filter is case-insensitive: "ROCK" matches stored "Rock"', async () => {
+      const releases = [
+        makeRelease(1, { genres: 'Rock, Pop' }),
+      ];
+      (dbMock.getAllReleases as jest.Mock).mockResolvedValue(releases);
+
+      const filtered = await collectionService.filterReleases({ genres: ['ROCK'] });
+
+      expect(filtered).toHaveLength(1);
+    });
+
+    test('style filter does NOT match substring: "House" does not match "Deep House"', async () => {
+      const releases = [
+        makeRelease(1, { genres: 'Electronic', styles: 'Deep House' }),
+        makeRelease(2, { genres: 'Electronic', styles: 'House' }),
+      ];
+      (dbMock.getAllReleases as jest.Mock).mockResolvedValue(releases);
+
+      const filtered = await collectionService.filterReleases({ styles: ['House'] });
+
+      expect(filtered).toHaveLength(1);
+      expect(filtered[0].discogsId).toBe(2);
+    });
+
+    test('label filter matches exact label name case-insensitively', async () => {
+      const releases = [
+        makeRelease(1, { genres: 'Rock', labels: 'Atlantic, Columbia' }),
+        makeRelease(2, { genres: 'Jazz', labels: 'Blue Note' }),
+        makeRelease(3, { genres: 'Pop', labels: 'columbia records' }),
+      ];
+      (dbMock.getAllReleases as jest.Mock).mockResolvedValue(releases);
+
+      const filtered = await collectionService.filterReleases({ labels: ['columbia'] });
+
+      // Should match both "Columbia" (in "Atlantic, Columbia") and "columbia records" — wait,
+      // "columbia records" !== "columbia" as an item, so only the first should match.
+      expect(filtered).toHaveLength(1);
+      expect(filtered[0].discogsId).toBe(1);
+    });
+
+    test('artist filter matches individual artist in comma-separated list', async () => {
+      const releases = [
+        makeRelease(1, { artists: 'John Lennon, Paul McCartney' }),
+        makeRelease(2, { artists: 'George Harrison' }),
+        makeRelease(3, { artists: 'Ringo Starr' }),
+      ];
+      (dbMock.getAllReleases as jest.Mock).mockResolvedValue(releases);
+
+      const filtered = await collectionService.filterReleases({ artists: ['Paul McCartney'] });
+
+      expect(filtered).toHaveLength(1);
+      expect(filtered[0].discogsId).toBe(1);
+    });
+
+    test('multiple genre filters use OR logic', async () => {
+      const releases = [
+        makeRelease(1, { genres: 'Rock' }),
+        makeRelease(2, { genres: 'Jazz' }),
+        makeRelease(3, { genres: 'Pop' }),
+      ];
+      (dbMock.getAllReleases as jest.Mock).mockResolvedValue(releases);
+
+      const filtered = await collectionService.filterReleases({ genres: ['Rock', 'Jazz'] });
+
+      expect(filtered).toHaveLength(2);
+      expect(filtered.map(r => r.discogsId).sort()).toEqual([1, 2]);
+    });
+  });
 });

@@ -13,6 +13,7 @@ import { Validator, ValidationError } from '../utils/validator';
 import { EncryptionService } from '../utils/encryption';
 import { InputSanitizer } from '../utils/sanitizer';
 import { Logger } from '../utils/logger';
+import { createReviewCommand, createUnmatchedCommand } from './review';
 
 export function createPlaylistCommand(
   discogsClient: DiscogsAPIClient,
@@ -150,10 +151,15 @@ export function createPlaylistCommand(
         progressCallback
       );
 
+      const unmatchedCounts = await db.countUnmatchedTracks(validated.title);
+      const unmatchedInfo = unmatchedCounts.pending > 0
+        ? chalk.yellow(`\n   ${unmatchedCounts.pending} track(s) could not be matched automatically — run:\n   npm run dev -- playlist review --title "${validated.title}"`)
+        : '';
+
       spinner.succeed(
         CommandBuilder.formatSuccess(
-          `Playlist "${options.title}" created with ${releases.length} tracks`
-        )
+          `Playlist "${options.title}" created with ${playlist.trackCount} tracks`
+        ) + unmatchedInfo
       );
       console.log(chalk.gray(`Playlist ID: ${playlist.id}`));
       process.exit(0);
@@ -171,6 +177,10 @@ export function createPlaylistCommand(
       process.exit(1);
     }
   });
+
+  // Register review and unmatched as subcommands of playlist
+  cmd.addCommand(createReviewCommand(soundcloudClient, db));
+  cmd.addCommand(createUnmatchedCommand(db));
 
   return cmd;
 }

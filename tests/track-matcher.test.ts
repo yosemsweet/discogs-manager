@@ -71,14 +71,14 @@ describe('TrackMatcher', () => {
         duration: 354000, // 5:54 in milliseconds
       };
 
-      const score = TrackMatcher.scoreMatch(
+      const { confidence } = TrackMatcher.scoreMatch(
         'Bohemian Rhapsody',
         'Queen',
         '5:54',
         candidate
       );
 
-      expect(score).toBeGreaterThan(0.95);
+      expect(confidence).toBeGreaterThan(0.95);
     });
 
     it('should score similar matches highly', () => {
@@ -89,14 +89,14 @@ describe('TrackMatcher', () => {
         duration: 357000, // ~5:57 (slight difference)
       };
 
-      const score = TrackMatcher.scoreMatch(
+      const { confidence } = TrackMatcher.scoreMatch(
         'Bohemian Rhapsody',
         'Queen',
         '5:54',
         candidate
       );
 
-      expect(score).toBeGreaterThan(0.6); // Realistic threshold for good matches
+      expect(confidence).toBeGreaterThan(0.6); // Realistic threshold for good matches
     });
 
     it('should score poor matches lowly', () => {
@@ -107,14 +107,14 @@ describe('TrackMatcher', () => {
         duration: 180000,
       };
 
-      const score = TrackMatcher.scoreMatch(
+      const { confidence } = TrackMatcher.scoreMatch(
         'Bohemian Rhapsody',
         'Queen',
         '5:54',
         candidate
       );
 
-      expect(score).toBeLessThan(0.4);
+      expect(confidence).toBeLessThan(0.4);
     });
 
     it('should weight title similarity most heavily', () => {
@@ -122,7 +122,7 @@ describe('TrackMatcher', () => {
         id: '123',
         title: 'Love Me Do',
         user: { username: 'Wrong Artist' },
-        duration: 200000, // Different duration to ensure title wins
+        duration: 200000,
       };
 
       const candidateBadTitle: MatchCandidate = {
@@ -132,21 +132,21 @@ describe('TrackMatcher', () => {
         duration: 200000,
       };
 
-      const scoreGoodTitle = TrackMatcher.scoreMatch(
+      const { confidence: scoreGoodTitle } = TrackMatcher.scoreMatch(
         'Love Me Do',
         'The Beatles',
         '2:23',
         candidateGoodTitle
       );
 
-      const scoreBadTitle = TrackMatcher.scoreMatch(
+      const { confidence: scoreBadTitle } = TrackMatcher.scoreMatch(
         'Love Me Do',
         'The Beatles',
         '2:23',
         candidateBadTitle
       );
 
-      // Good title should score higher even with wrong artist (title weighted 50%)
+      // Good title should score higher even with wrong artist (title weighted 60%)
       expect(scoreGoodTitle).toBeGreaterThan(scoreBadTitle);
     });
 
@@ -157,14 +157,14 @@ describe('TrackMatcher', () => {
         user: { username: 'Artist Name' },
       };
 
-      const score = TrackMatcher.scoreMatch(
+      const { confidence } = TrackMatcher.scoreMatch(
         'Song Name',
         'Artist Name',
         null,
         candidate
       );
 
-      expect(score).toBeGreaterThan(0); // Should still score based on title/artist
+      expect(confidence).toBeGreaterThan(0); // Should still score based on title/artist
     });
 
     it('should penalize large duration differences', () => {
@@ -175,7 +175,7 @@ describe('TrackMatcher', () => {
         duration: 600000, // 10 minutes
       };
 
-      const score = TrackMatcher.scoreMatch(
+      const { confidence } = TrackMatcher.scoreMatch(
         'Song Name',
         'Artist Name',
         '3:00', // 3 minutes - very different
@@ -183,7 +183,84 @@ describe('TrackMatcher', () => {
       );
 
       // Duration difference should lower the score
-      expect(score).toBeLessThan(0.9);
+      expect(confidence).toBeLessThan(0.9);
+    });
+
+    it('should return a score breakdown with all dimensions', () => {
+      const candidate: MatchCandidate = {
+        id: '1',
+        title: 'Hey Jude',
+        user: { username: 'The Beatles' },
+        duration: 431000,
+      };
+
+      const { confidence, breakdown } = TrackMatcher.scoreMatch(
+        'Hey Jude',
+        'The Beatles',
+        '7:11',
+        candidate
+      );
+
+      expect(breakdown).toBeDefined();
+      expect(breakdown.titleScore).toBeGreaterThanOrEqual(0);
+      expect(breakdown.titleScore).toBeLessThanOrEqual(1);
+      expect(breakdown.artistScore).toBeGreaterThanOrEqual(0);
+      expect(breakdown.durationScore).toBeGreaterThanOrEqual(0);
+      expect(breakdown.weightsUsed).toBeGreaterThan(0);
+      expect(confidence).toBeGreaterThan(0.8);
+    });
+
+    it('should normalize Discogs parentheticals before scoring', () => {
+      // Raw title with remaster info should score similar to the normalized version
+      const candidate: MatchCandidate = {
+        id: '1',
+        title: 'Love Me Do',
+        user: { username: 'The Beatles' },
+        duration: 143000,
+      };
+
+      const { confidence: rawScore } = TrackMatcher.scoreMatch(
+        'Love Me Do (Remastered 2009)',
+        'The Beatles',
+        '2:23',
+        candidate
+      );
+
+      const { confidence: cleanScore } = TrackMatcher.scoreMatch(
+        'Love Me Do',
+        'The Beatles',
+        '2:23',
+        candidate
+      );
+
+      // Normalized version should score at least as well as the raw version with extra metadata
+      // (scoreMatch normalizes internally, so both should be similar now)
+      expect(rawScore).toBeGreaterThan(0.7);
+      expect(cleanScore).toBeGreaterThan(0.7);
+    });
+
+    it('should allow ~15% duration variance to still score well', () => {
+      const candidateExact: MatchCandidate = {
+        id: '1',
+        title: 'Song Name',
+        user: { username: 'Artist' },
+        duration: 180000, // 3:00 exactly
+      };
+
+      const candidateClose: MatchCandidate = {
+        id: '2',
+        title: 'Song Name',
+        user: { username: 'Artist' },
+        duration: 207000, // 3:27 = 15% longer
+      };
+
+      const { breakdown: exactBreakdown } = TrackMatcher.scoreMatch('Song Name', 'Artist', '3:00', candidateExact);
+      const { breakdown: closeBreakdown } = TrackMatcher.scoreMatch('Song Name', 'Artist', '3:00', candidateClose);
+
+      // Exact match should score 1.0 on duration
+      expect(exactBreakdown.durationScore).toBe(1);
+      // 15% variance: score = max(0, 1 - 0.15 * 5) = max(0, 0.25) > 0
+      expect(closeBreakdown.durationScore).toBeGreaterThan(0);
     });
   });
 

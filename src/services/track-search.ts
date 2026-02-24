@@ -35,10 +35,16 @@ export class TrackSearchService {
      * - Includes album context in search
      * - Fetches multiple results for validation
      * - Validates results with similarity checking
+     * - Persists unmatched tracks with near-miss candidates for later review
+     *
+     * @param releases - Releases to search tracks for
+     * @param onProgress - Progress callback
+     * @param playlistTitle - Title of the playlist being built (used to associate unmatched tracks)
      */
     async searchTracksForReleases(
         releases: StoredRelease[],
-        onProgress: ProgressCallback = noopProgress
+        onProgress: ProgressCallback = noopProgress,
+        playlistTitle?: string
     ): Promise<Array<{ trackId: string; discogsId: number }>> {
         const trackData: Array<{ trackId: string; discogsId: number }> = [];
         let processedCount = 0;
@@ -77,7 +83,7 @@ export class TrackSearchService {
                     }
 
                     // Try to find match using fallback strategies
-                    const matchResult = await this.searchWithFallback(track, release);
+                    const matchResult = await this.searchWithFallback(track, release, playlistTitle);
 
                     if (matchResult) {
                         trackData.push({
@@ -126,7 +132,8 @@ export class TrackSearchService {
      */
     private async searchWithFallback(
         track: any,
-        release: StoredRelease
+        release: StoredRelease,
+        playlistTitle?: string
     ): Promise<{ trackId: string; matchedTitle: string; confidence: number } | null> {
         // Check cache first
         try {
@@ -154,6 +161,9 @@ export class TrackSearchService {
             release.title
         );
 
+        // Track last set of search results so we can mine near-misses after exhausting strategies
+        let lastSearchResults: MatchCandidate[] = [];
+
         // Try each strategy until we find a confident match
         for (let i = 0; i < strategies.length; i++) {
             const query = strategies[i];
@@ -170,12 +180,14 @@ export class TrackSearchService {
                 const searchResults = Array.isArray(response) ? response : (response?.collection || []);
 
                 if (searchResults && searchResults.length > 0) {
+                    lastSearchResults = searchResults as MatchCandidate[];
+
                     // Use advanced fuzzy matching
                     const bestMatch = TrackMatcher.findBestMatch(
                         track.title,
                         track.artists || '',
                         track.duration || null,
-                        searchResults as MatchCandidate[]
+                        lastSearchResults
                     );
 
                     if (bestMatch) {
@@ -213,10 +225,49 @@ export class TrackSearchService {
             }
         }
 
-        // All strategies exhausted
+        // All strategies exhausted — collect near-miss candidates for manual review
         Logger.debug(
             `No match found after trying ${strategies.length} query strategies for "${track.title}"`
         );
+
+        if (playlistTitle) {
+            try {
+                // Find near-miss candidates (lower threshold 0.3 to surface anything useful)
+                const nearMisses = TrackMatcher.findAllMatches(
+                    track.title,
+                    track.artists || '',
+                    track.duration || null,
+                    lastSearchResults,
+                    0.3
+                ).slice(0, 3); // Keep top-3
+
+                const topCandidatesJson = nearMisses.length > 0
+                    ? JSON.stringify(nearMisses.map(m => ({
+                        id: (m.candidate.id || (m.candidate as any).track_id || '').toString(),
+                        title: m.candidate.title,
+                        username: m.candidate.user?.username,
+                        duration: m.candidate.duration,
+                        confidence: m.confidence,
+                        breakdown: m.breakdown,
+                    })))
+                    : null;
+
+                await this.db.saveUnmatchedTrack({
+                    playlistTitle,
+                    discogsReleaseId: release.discogsId,
+                    discogsTrackTitle: track.title,
+                    discogsArtist: track.artists || null,
+                    discogsDuration: track.duration || null,
+                    releaseTitle: release.title,
+                    topCandidatesJson,
+                    strategiesTriedCount: strategies.length,
+                });
+            } catch (error) {
+                Logger.debug(`Failed to save unmatched track "${track.title}": ${error}`);
+                // Don't fail the overall search
+            }
+        }
+
         return null;
     }
 }

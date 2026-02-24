@@ -236,4 +236,127 @@ describe('DatabaseManager', () => {
       expect(releases).toHaveLength(0);
     });
   });
+
+  describe('unmatched_tracks CRUD', () => {
+    const baseRelease = {
+      discogsId: 999,
+      title: 'Test Album',
+      artists: 'Test Artist',
+      year: 2020,
+      genres: 'Rock',
+      styles: 'Alternative',
+      addedAt: new Date(),
+    };
+
+    beforeEach(async () => {
+      await dbManager.addRelease(baseRelease);
+    });
+
+    test('saveUnmatchedTrack stores a pending record', async () => {
+      await dbManager.saveUnmatchedTrack({
+        playlistTitle: 'My Playlist',
+        discogsReleaseId: 999,
+        discogsTrackTitle: 'Test Track',
+        discogsArtist: 'Test Artist',
+        discogsDuration: '3:30',
+        releaseTitle: 'Test Album',
+        topCandidatesJson: JSON.stringify([{ id: '1', title: 'Close Match', confidence: 0.45 }]),
+        strategiesTriedCount: 4,
+      });
+
+      const records = await dbManager.getUnmatchedTracks('My Playlist', 'pending');
+      expect(records).toHaveLength(1);
+      expect(records[0].discogsTrackTitle).toBe('Test Track');
+      expect(records[0].status).toBe('pending');
+      expect(records[0].discogsArtist).toBe('Test Artist');
+      expect(records[0].strategiesTriedCount).toBe(4);
+    });
+
+    test('getUnmatchedTracks filters by status', async () => {
+      await dbManager.saveUnmatchedTrack({
+        playlistTitle: 'My Playlist',
+        discogsReleaseId: 999,
+        discogsTrackTitle: 'Track A',
+        strategiesTriedCount: 3,
+      });
+      await dbManager.saveUnmatchedTrack({
+        playlistTitle: 'My Playlist',
+        discogsReleaseId: 999,
+        discogsTrackTitle: 'Track B',
+        strategiesTriedCount: 2,
+      });
+
+      const pending = await dbManager.getUnmatchedTracks('My Playlist', 'pending');
+      expect(pending).toHaveLength(2);
+
+      const resolved = await dbManager.getUnmatchedTracks('My Playlist', 'resolved');
+      expect(resolved).toHaveLength(0);
+    });
+
+    test('resolveUnmatchedTrack marks record as resolved', async () => {
+      await dbManager.saveUnmatchedTrack({
+        playlistTitle: 'My Playlist',
+        discogsReleaseId: 999,
+        discogsTrackTitle: 'Resolve Me',
+        strategiesTriedCount: 1,
+      });
+
+      const [record] = await dbManager.getUnmatchedTracks('My Playlist', 'pending');
+      await dbManager.resolveUnmatchedTrack(record.id, 'sc-track-789');
+
+      const pending = await dbManager.getUnmatchedTracks('My Playlist', 'pending');
+      expect(pending).toHaveLength(0);
+
+      const resolved = await dbManager.getUnmatchedTracks('My Playlist', 'resolved');
+      expect(resolved).toHaveLength(1);
+      expect(resolved[0].resolvedTrackId).toBe('sc-track-789');
+      expect(resolved[0].resolvedAt).not.toBeNull();
+    });
+
+    test('skipUnmatchedTrack marks record as skipped', async () => {
+      await dbManager.saveUnmatchedTrack({
+        playlistTitle: 'My Playlist',
+        discogsReleaseId: 999,
+        discogsTrackTitle: 'Skip Me',
+        strategiesTriedCount: 4,
+      });
+
+      const [record] = await dbManager.getUnmatchedTracks('My Playlist', 'pending');
+      await dbManager.skipUnmatchedTrack(record.id);
+
+      const pending = await dbManager.getUnmatchedTracks('My Playlist', 'pending');
+      expect(pending).toHaveLength(0);
+
+      const skipped = await dbManager.getUnmatchedTracks('My Playlist', 'skipped');
+      expect(skipped).toHaveLength(1);
+    });
+
+    test('countUnmatchedTracks returns correct counts across all statuses', async () => {
+      await dbManager.saveUnmatchedTrack({ playlistTitle: 'P', discogsReleaseId: 999, discogsTrackTitle: 'T1' });
+      await dbManager.saveUnmatchedTrack({ playlistTitle: 'P', discogsReleaseId: 999, discogsTrackTitle: 'T2' });
+      await dbManager.saveUnmatchedTrack({ playlistTitle: 'P', discogsReleaseId: 999, discogsTrackTitle: 'T3' });
+
+      const records = await dbManager.getUnmatchedTracks('P', 'pending');
+      await dbManager.resolveUnmatchedTrack(records[0].id, 'sc-1');
+      await dbManager.skipUnmatchedTrack(records[1].id);
+
+      const counts = await dbManager.countUnmatchedTracks('P');
+      expect(counts.pending).toBe(1);
+      expect(counts.resolved).toBe(1);
+      expect(counts.skipped).toBe(1);
+    });
+
+    test('getUnmatchedTracks is scoped to playlistTitle', async () => {
+      await dbManager.saveUnmatchedTrack({ playlistTitle: 'Playlist A', discogsReleaseId: 999, discogsTrackTitle: 'Track X' });
+      await dbManager.saveUnmatchedTrack({ playlistTitle: 'Playlist B', discogsReleaseId: 999, discogsTrackTitle: 'Track Y' });
+
+      const forA = await dbManager.getUnmatchedTracks('Playlist A', 'pending');
+      const forB = await dbManager.getUnmatchedTracks('Playlist B', 'pending');
+
+      expect(forA).toHaveLength(1);
+      expect(forA[0].discogsTrackTitle).toBe('Track X');
+      expect(forB).toHaveLength(1);
+      expect(forB[0].discogsTrackTitle).toBe('Track Y');
+    });
+  });
 });
