@@ -115,42 +115,39 @@ export class PlaylistService {
     // Find new releases not yet in the playlist
     const newReleases = releases.filter((r) => !existingDiscogsIds.has(r.discogsId));
 
-    if (newReleases.length === 0) {
-      onProgress({
-        stage: 'Playlist up to date',
-        current: releases.length,
-        total: releases.length,
-        message: `No new tracks to add to "${title}"`,
-      });
-      return { id: playlistId, trackCount: existingPlaylistTracks.length };
+    let newTrackData: { trackId: string; discogsId: number }[] = [];
+    if (newReleases.length > 0) {
+      onProgress({ stage: 'Fetching tracklists', current: 0, total: newReleases.length, message: title });
+
+      // Search for new tracks on SoundCloud, associating unmatched tracks with this playlist
+      newTrackData = await this.trackSearchService.searchTracksForReleases(newReleases, onProgress, title);
     }
-
-    onProgress({ stage: 'Fetching tracklists', current: 0, total: newReleases.length, message: title });
-
-    // Search for new tracks on SoundCloud, associating unmatched tracks with this playlist
-    const newTrackData = await this.trackSearchService.searchTracksForReleases(newReleases, onProgress, title);
 
     const newTrackIds = newTrackData.map((t) => t.trackId);
 
-    if (newTrackIds.length === 0) {
+    // Build the full track list: existing + newly matched.
+    // Always PUT to SoundCloud so the playlist stays in sync even if previous
+    // runs wiped tracks or no new matches were found this time.
+    const allTrackIds = [...existingSoundCloudIds, ...newTrackIds];
+
+    if (allTrackIds.length === 0) {
       onProgress({
         stage: 'Playlist up to date',
         current: releases.length,
         total: releases.length,
-        message: `No new SoundCloud tracks found to add to "${title}"`,
+        message: `No tracks to add to "${title}"`,
       });
-      return { id: playlistId, trackCount: existingPlaylistTracks.length };
+      return { id: playlistId, trackCount: 0 };
     }
 
-    // Add new tracks to existing playlist with batching
     onProgress({
-      stage: 'Adding new tracks',
+      stage: 'Syncing tracks to SoundCloud',
       current: 0,
-      total: newTrackIds.length,
+      total: allTrackIds.length,
       message: title,
     });
 
-    await this.batchManager.addTracksInBatches(playlistId, [...existingSoundCloudIds, ...newTrackIds], onProgress);
+    await this.batchManager.addTracksInBatches(playlistId, allTrackIds, onProgress);
 
     // Save new release-to-playlist mappings in database
     for (const { trackId, discogsId } of newTrackData) {
@@ -164,7 +161,7 @@ export class PlaylistService {
       message: `Added ${newTrackIds.length} tracks from ${newReleases.length} new releases to "${title}"`,
     });
 
-    return { id: playlistId, trackCount: existingPlaylistTracks.length + newTrackIds.length };
+    return { id: playlistId, trackCount: allTrackIds.length };
   }
 
   async getPlaylistInfo(playlistId: string) {
