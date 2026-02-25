@@ -147,11 +147,26 @@ export class PlaylistService {
       message: title,
     });
 
-    await this.batchManager.addTracksInBatches(playlistId, allTrackIds, onProgress);
+    let finalPlaylistId = playlistId;
+    try {
+      await this.batchManager.addTracksInBatches(playlistId, allTrackIds, onProgress);
+    } catch (error) {
+      // If the SoundCloud playlist was deleted, recreate it and reassign the DB records
+      if (error instanceof AppError && error.statusCode === 404) {
+        onProgress({ stage: 'Recreating deleted playlist', current: 0, total: allTrackIds.length, message: title });
+        const newPlaylist = await this.batchManager.createPlaylistWithBatching(
+          title, allTrackIds, '', false, onProgress
+        );
+        finalPlaylistId = String(newPlaylist.id);
+        await this.db.reassignPlaylist(playlistId, finalPlaylistId, title);
+      } else {
+        throw error;
+      }
+    }
 
     // Save new release-to-playlist mappings in database
     for (const { trackId, discogsId } of newTrackData) {
-      await this.db.addReleaseToPlaylist(playlistId, discogsId, trackId);
+      await this.db.addReleaseToPlaylist(finalPlaylistId, discogsId, trackId);
     }
 
     onProgress({
@@ -161,7 +176,7 @@ export class PlaylistService {
       message: `Added ${newTrackIds.length} tracks from ${newReleases.length} new releases to "${title}"`,
     });
 
-    return { id: playlistId, trackCount: allTrackIds.length };
+    return { id: finalPlaylistId, trackCount: allTrackIds.length };
   }
 
   async getPlaylistInfo(playlistId: string) {

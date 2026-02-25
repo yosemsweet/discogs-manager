@@ -234,6 +234,29 @@ export class DatabaseManager {
     });
   }
 
+  /**
+   * Re-register a playlist under a new SoundCloud ID (e.g. after the old one was deleted).
+   * Inserts the new playlist row, migrates all playlist_releases, then removes the old row.
+   */
+  reassignPlaylist(oldId: string, newId: string, title: string, description?: string): Promise<void> {
+    return Promise.resolve().then(() => {
+      const insert = this.db.prepare(
+        'INSERT OR IGNORE INTO playlists (id, title, description, soundcloudId) VALUES (?, ?, ?, ?)'
+      );
+      const updateReleases = this.db.prepare(
+        'UPDATE playlist_releases SET playlistId = ? WHERE playlistId = ?'
+      );
+      const deleteOld = this.db.prepare('DELETE FROM playlists WHERE id = ?');
+
+      const tx = this.db.transaction(() => {
+        insert.run(newId, title, description || '', newId);
+        updateReleases.run(newId, oldId);
+        deleteOld.run(oldId);
+      });
+      tx();
+    });
+  }
+
   addReleaseToPlaylist(
     playlistId: string,
     releaseId: number,
