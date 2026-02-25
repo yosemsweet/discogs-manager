@@ -109,6 +109,8 @@ export class PlaylistService {
     // Fetch existing tracks in playlist from database
     const existingPlaylistTracks = await this.db.getPlaylistTracks(playlistId);
     const existingDiscogsIds = new Set(existingPlaylistTracks.map((t) => t.releaseId));
+    // Keep existing SoundCloud track IDs so the PUT doesn't wipe them
+    const existingSoundCloudIds = existingPlaylistTracks.map((t) => t.soundcloudTrackId);
 
     // Find new releases not yet in the playlist
     const newReleases = releases.filter((r) => !existingDiscogsIds.has(r.discogsId));
@@ -148,7 +150,7 @@ export class PlaylistService {
       message: title,
     });
 
-    await this.batchManager.addTracksInBatches(playlistId, newTrackIds, onProgress);
+    await this.batchManager.addTracksInBatches(playlistId, [...existingSoundCloudIds, ...newTrackIds], onProgress);
 
     // Save new release-to-playlist mappings in database
     for (const { trackId, discogsId } of newTrackData) {

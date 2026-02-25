@@ -57,13 +57,15 @@ export class SoundCloudRateLimitError extends SoundCloudAPIClientError {
 export class SoundCloudAPIClient {
   private client: AxiosInstance;
   private accessToken: string;
+  private rateLimitService: SoundCloudRateLimitService | null = null;
 
-  constructor(accessToken: string) {
+  constructor(accessToken: string, rateLimitService?: SoundCloudRateLimitService) {
     if (!accessToken) {
       throw new Error('SoundCloud API requires an OAuth access token');
     }
 
     this.accessToken = accessToken;
+    this.rateLimitService = rateLimitService || null;
 
     this.client = axios.create({
       baseURL: 'https://api.soundcloud.com',
@@ -95,6 +97,10 @@ export class SoundCloudAPIClient {
         appError.remainingRequests = rateLimitInfo.remainingRequests;
         appError.resetTime = rateLimitInfo.resetTime;
         appError.maxRequests = rateLimitInfo.maxRequests;
+      }
+      // Update the rate limit service so throttleIfApproachingLimit knows the current state
+      if (this.rateLimitService && rateLimitInfo.resetTime !== 'unknown') {
+        this.rateLimitService.updateFromResponse(rateLimitInfo.remainingRequests, rateLimitInfo.resetTime);
       }
     }
 

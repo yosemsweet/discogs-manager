@@ -67,19 +67,23 @@ export class PlaylistBatchManager {
         }
 
         if (trackIds.length <= this.BATCH_SIZE) {
-            // Small batch - single request
+            // Small enough for a single request
             await this.soundcloudClient.addTracksToPlaylist(playlistId, trackIds);
         } else {
-            // Large batch - split into multiple requests
+            // SoundCloud PUT /playlists/{id} replaces the entire track list, so each
+            // batch must include all previously sent tracks or they get wiped.
+            // Accumulate sent IDs and grow the payload with each request.
+            const accumulated: string[] = [];
             for (let i = 0; i < trackIds.length; i += this.BATCH_SIZE) {
                 const batch = trackIds.slice(i, i + this.BATCH_SIZE);
+                accumulated.push(...batch);
                 onProgress({
                     stage: 'Adding tracks to playlist',
-                    current: i + batch.length,
+                    current: accumulated.length,
                     total: trackIds.length,
                     message: `Batch ${Math.floor(i / this.BATCH_SIZE) + 1}/${Math.ceil(trackIds.length / this.BATCH_SIZE)}`,
                 });
-                await this.soundcloudClient.addTracksToPlaylist(playlistId, batch);
+                await this.soundcloudClient.addTracksToPlaylist(playlistId, accumulated);
             }
         }
     }

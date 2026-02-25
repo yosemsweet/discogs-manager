@@ -93,6 +93,12 @@ export function createPlaylistCommand(
         throw new ValidationError('title', 'Playlist title contains suspicious patterns');
       }
 
+      // Initialise rate limit service early so it can be passed to the API client,
+      // allowing 429 responses to update the stored state automatically.
+      spinner.text = 'Checking SoundCloud rate limits...';
+      const rateLimitService = new SoundCloudRateLimitService(db);
+      await rateLimitService.initializeFromDatabase();
+
       // Lazy-load SoundCloud client if not provided
       let clientToUse = soundcloudClient;
       if (!clientToUse) {
@@ -109,7 +115,7 @@ export function createPlaylistCommand(
           );
           spinner.text = 'Retrieving access token...';
           const token = await oauthService.getValidAccessToken();
-          clientToUse = new SoundCloudAPIClient(token);
+          clientToUse = new SoundCloudAPIClient(token, rateLimitService);
           spinner.text = ''; // Clear the spinner text before continuing
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : String(error);
@@ -121,10 +127,6 @@ export function createPlaylistCommand(
 
       // Validate options
       const validated = Validator.validatePlaylistOptions(options);
-
-      spinner.text = 'Checking SoundCloud rate limits...';
-      const rateLimitService = new SoundCloudRateLimitService(db);
-      await rateLimitService.initializeFromDatabase();
 
       const collectionService = new CollectionService(discogsClient, db);
       const playlistService = new PlaylistService(clientToUse, db, rateLimitService);

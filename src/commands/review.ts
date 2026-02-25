@@ -3,6 +3,7 @@ import chalk from 'chalk';
 import readline from 'readline';
 import { SoundCloudAPIClient } from '../api/soundcloud';
 import { SoundCloudOAuthService } from '../services/soundcloud-oauth';
+import { SoundCloudRateLimitService } from '../services/soundcloud-rate-limit';
 import { DatabaseManager } from '../services/database';
 import { PlaylistBatchManager } from '../services/playlist-batch';
 import { EncryptionService } from '../utils/encryption';
@@ -46,6 +47,10 @@ export function createReviewCommand(
   cmd.action(async (options) => {
     const playlistTitle: string = options.title;
 
+    // Initialise rate limit service so 429 responses update the stored state
+    const rateLimitService = new SoundCloudRateLimitService(db);
+    await rateLimitService.initializeFromDatabase();
+
     // Lazy-load SoundCloud client if not provided
     let clientToUse = soundcloudClient;
     if (!clientToUse) {
@@ -59,7 +64,7 @@ export function createReviewCommand(
           encryptionService
         );
         const token = await oauthService.getValidAccessToken();
-        clientToUse = new SoundCloudAPIClient(token);
+        clientToUse = new SoundCloudAPIClient(token, rateLimitService);
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         console.error(chalk.red(`SoundCloud authentication failed: ${msg}`));
@@ -259,8 +264,15 @@ async function _resolveTrack(
   playlistDbId: string
 ): Promise<void> {
   try {
-    // Add to the SoundCloud playlist
-    await batchManager.addTracksInBatches(soundcloudPlaylistId, [soundcloudTrackId]);
+    // Fetch existing playlist tracks from DB so the PUT doesn't wipe them.
+    // SoundCloud PUT /playlists/{id} replaces the entire track list.
+    const existingTracks = await db.getPlaylistTracks(playlistDbId);
+    const existingTrackIds = existingTracks
+      .map(t => t.soundcloudTrackId)
+      .filter(id => id !== soundcloudTrackId); // skip if already present
+
+    // Add to the SoundCloud playlist, preserving existing tracks
+    await batchManager.addTracksInBatches(soundcloudPlaylistId, [...existingTrackIds, soundcloudTrackId]);
 
     // Save to track match cache so future runs don't need to search again
     await db.saveCachedTrackMatch(
