@@ -235,6 +235,74 @@ describe('DatabaseManager', () => {
       const releases = await dbManager.getPlaylistReleases('nonexistent-playlist');
       expect(releases).toHaveLength(0);
     });
+
+    test('should store multiple tracks for the same release in a playlist', async () => {
+      await dbManager.createPlaylist('playlist-1', 'My Playlist');
+
+      const release: StoredRelease = {
+        discogsId: 1,
+        title: 'Album',
+        artists: 'Artist',
+        year: 2020,
+        genres: 'Rock',
+        styles: 'Alternative',
+        addedAt: new Date(),
+      };
+      await dbManager.addRelease(release);
+
+      await dbManager.addReleaseToPlaylist('playlist-1', 1, 'track-aaa');
+      await dbManager.addReleaseToPlaylist('playlist-1', 1, 'track-bbb');
+      await dbManager.addReleaseToPlaylist('playlist-1', 1, 'track-ccc');
+
+      const tracks = await dbManager.getPlaylistTracks('playlist-1');
+      expect(tracks).toHaveLength(3);
+      expect(tracks.map(t => t.soundcloudTrackId).sort()).toEqual(['track-aaa', 'track-bbb', 'track-ccc']);
+    });
+
+    test('should not duplicate when inserting the same track twice', async () => {
+      await dbManager.createPlaylist('playlist-1', 'My Playlist');
+
+      const release: StoredRelease = {
+        discogsId: 1,
+        title: 'Album',
+        artists: 'Artist',
+        year: 2020,
+        genres: 'Rock',
+        styles: 'Alternative',
+        addedAt: new Date(),
+      };
+      await dbManager.addRelease(release);
+
+      await dbManager.addReleaseToPlaylist('playlist-1', 1, 'track-aaa');
+      await dbManager.addReleaseToPlaylist('playlist-1', 1, 'track-aaa');
+
+      const tracks = await dbManager.getPlaylistTracks('playlist-1');
+      expect(tracks).toHaveLength(1);
+    });
+
+    test('getPlaylistTracks returns tracks across multiple releases', async () => {
+      await dbManager.createPlaylist('playlist-1', 'My Playlist');
+
+      for (const id of [1, 2]) {
+        await dbManager.addRelease({
+          discogsId: id,
+          title: `Album ${id}`,
+          artists: `Artist ${id}`,
+          year: 2020,
+          genres: 'Rock',
+          styles: 'Alternative',
+          addedAt: new Date(),
+        });
+      }
+
+      await dbManager.addReleaseToPlaylist('playlist-1', 1, 'track-1a');
+      await dbManager.addReleaseToPlaylist('playlist-1', 1, 'track-1b');
+      await dbManager.addReleaseToPlaylist('playlist-1', 2, 'track-2a');
+
+      const tracks = await dbManager.getPlaylistTracks('playlist-1');
+      expect(tracks).toHaveLength(3);
+      expect(tracks.map(t => t.soundcloudTrackId).sort()).toEqual(['track-1a', 'track-1b', 'track-2a']);
+    });
   });
 
   describe('unmatched_tracks CRUD', () => {

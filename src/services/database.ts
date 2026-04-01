@@ -63,8 +63,8 @@ export class DatabaseManager {
         CREATE TABLE IF NOT EXISTS playlist_releases (
           playlistId TEXT NOT NULL,
           releaseId INTEGER NOT NULL,
-          soundcloudTrackId TEXT,
-          PRIMARY KEY (playlistId, releaseId),
+          soundcloudTrackId TEXT NOT NULL,
+          PRIMARY KEY (playlistId, releaseId, soundcloudTrackId),
           FOREIGN KEY (playlistId) REFERENCES playlists(id),
           FOREIGN KEY (releaseId) REFERENCES releases(discogsId)
         );
@@ -154,6 +154,9 @@ export class DatabaseManager {
       }
       if (currentVersion < 3) {
         this.migrateToVersion3();
+      }
+      if (currentVersion < 4) {
+        this.migrateToVersion4();
       }
     });
   }
@@ -260,13 +263,13 @@ export class DatabaseManager {
   addReleaseToPlaylist(
     playlistId: string,
     releaseId: number,
-    soundcloudTrackId?: string
+    soundcloudTrackId: string
   ): Promise<void> {
     return Promise.resolve().then(() => {
       const stmt = this.db.prepare(
         'INSERT OR REPLACE INTO playlist_releases (playlistId, releaseId, soundcloudTrackId) VALUES (?, ?, ?)'
       );
-      stmt.run(playlistId, releaseId, soundcloudTrackId || null);
+      stmt.run(playlistId, releaseId, soundcloudTrackId);
     });
   }
 
@@ -454,6 +457,20 @@ export class DatabaseManager {
     });
   }
 
+  getCachedTrackMatchesForReleases(
+    releaseIds: number[]
+  ): Promise<Array<{ discogsReleaseId: number; soundcloudTrackId: string }>> {
+    return Promise.resolve().then(() => {
+      if (releaseIds.length === 0) return [];
+      const placeholders = releaseIds.map(() => '?').join(',');
+      const stmt = this.db.prepare(
+        `SELECT discogsReleaseId, soundcloudTrackId FROM track_matches
+         WHERE discogsReleaseId IN (${placeholders})`
+      );
+      return (stmt.all(...releaseIds) as Array<{ discogsReleaseId: number; soundcloudTrackId: string }>) || [];
+    });
+  }
+
   /**
    * Save track match to cache
    *
@@ -606,6 +623,46 @@ export class DatabaseManager {
       console.log('  - Added unmatched_tracks table for manual review queue');
     } catch (err) {
       console.error('Migration to version 3 failed:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * Migrate database from version 3 to version 4
+   * Changes playlist_releases PK from (playlistId, releaseId) to
+   * (playlistId, releaseId, soundcloudTrackId) so multiple tracks per release
+   * can coexist in a playlist.
+   */
+  private migrateToVersion4(): void {
+    try {
+      console.log('Migrating database to version 4...');
+
+      this.db.exec(`
+        CREATE TABLE playlist_releases_new (
+          playlistId TEXT NOT NULL,
+          releaseId INTEGER NOT NULL,
+          soundcloudTrackId TEXT NOT NULL,
+          PRIMARY KEY (playlistId, releaseId, soundcloudTrackId),
+          FOREIGN KEY (playlistId) REFERENCES playlists(id),
+          FOREIGN KEY (releaseId) REFERENCES releases(discogsId)
+        );
+
+        INSERT OR IGNORE INTO playlist_releases_new (playlistId, releaseId, soundcloudTrackId)
+        SELECT playlistId, releaseId, soundcloudTrackId
+        FROM playlist_releases
+        WHERE soundcloudTrackId IS NOT NULL;
+
+        DROP TABLE playlist_releases;
+
+        ALTER TABLE playlist_releases_new RENAME TO playlist_releases;
+      `);
+
+      this.setSchemaVersion(4);
+
+      console.log('✓ Database migrated to version 4');
+      console.log('  - playlist_releases now supports multiple tracks per release');
+    } catch (err) {
+      console.error('Migration to version 4 failed:', err);
       throw err;
     }
   }

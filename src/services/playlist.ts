@@ -108,9 +108,23 @@ export class PlaylistService {
 
     // Fetch existing tracks in playlist from database
     const existingPlaylistTracks = await this.db.getPlaylistTracks(playlistId);
+    const existingTrackIdSet = new Set(existingPlaylistTracks.map((t) => `${t.releaseId}:${t.soundcloudTrackId}`));
     const existingDiscogsIds = new Set(existingPlaylistTracks.map((t) => t.releaseId));
     // Keep existing SoundCloud track IDs so the PUT doesn't wipe them
     const existingSoundCloudIds = existingPlaylistTracks.map((t) => t.soundcloudTrackId);
+
+    // Backfill: check if any existing releases have cached matches not yet in playlist_releases
+    const existingReleaseIds = Array.from(existingDiscogsIds);
+    const cachedMatches = await this.db.getCachedTrackMatchesForReleases(existingReleaseIds);
+    const backfillTracks: { trackId: string; discogsId: number }[] = [];
+    for (const match of cachedMatches) {
+      const key = `${match.discogsReleaseId}:${match.soundcloudTrackId}`;
+      if (!existingTrackIdSet.has(key)) {
+        backfillTracks.push({ trackId: match.soundcloudTrackId, discogsId: match.discogsReleaseId });
+        existingSoundCloudIds.push(match.soundcloudTrackId);
+        existingTrackIdSet.add(key);
+      }
+    }
 
     // Find new releases not yet in the playlist
     const newReleases = releases.filter((r) => !existingDiscogsIds.has(r.discogsId));
@@ -164,7 +178,10 @@ export class PlaylistService {
       }
     }
 
-    // Save new release-to-playlist mappings in database
+    // Save backfilled and new release-to-playlist mappings in database
+    for (const { trackId, discogsId } of backfillTracks) {
+      await this.db.addReleaseToPlaylist(finalPlaylistId, discogsId, trackId);
+    }
     for (const { trackId, discogsId } of newTrackData) {
       await this.db.addReleaseToPlaylist(finalPlaylistId, discogsId, trackId);
     }
