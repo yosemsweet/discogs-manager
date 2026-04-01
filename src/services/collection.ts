@@ -70,7 +70,7 @@ export class CollectionService {
             labels: releaseDetails.labels && releaseDetails.labels.length > 0
               ? releaseDetails.labels.map((l: any) => l.name).join(', ')
               : undefined,
-            addedAt: new Date(),
+            addedAt: release.date_added ? new Date(release.date_added) : new Date(),
           };
           await this.db.addRelease(storedRelease);
 
@@ -273,7 +273,7 @@ export class CollectionService {
     let releases = await this.db.getAllReleases();
     const totalReleases = releases.length;
     let currentStep = 0;
-    const totalSteps = 8; // genres, minYear, maxYear, minRating, maxRating, styles, artists, labels
+    const totalSteps = 10; // genres, minYear, maxYear, minRating, maxRating, styles, artists, labels, acquiredAfter, acquiredBefore
 
     onProgress({ stage: 'Loading releases', current: 0, total: totalReleases });
 
@@ -334,6 +334,24 @@ export class CollectionService {
       currentStep++;
       onProgress({ stage: `Filtering by labels ${filter.labels.join(', ')}`, current: currentStep, total: totalSteps });
       releases = releases.filter((r) => matchesAnyItem(r.labels, filter.labels!));
+    }
+
+    if (filter.acquiredAfter) {
+      currentStep++;
+      onProgress({ stage: `Filtering acquired after ${filter.acquiredAfter.toISOString().split('T')[0]}`, current: currentStep, total: totalSteps });
+      releases = releases.filter((r) => {
+        const addedAt = r.addedAt instanceof Date ? r.addedAt : new Date(r.addedAt);
+        return addedAt >= filter.acquiredAfter!;
+      });
+    }
+
+    if (filter.acquiredBefore) {
+      currentStep++;
+      onProgress({ stage: `Filtering acquired before ${filter.acquiredBefore.toISOString().split('T')[0]}`, current: currentStep, total: totalSteps });
+      releases = releases.filter((r) => {
+        const addedAt = r.addedAt instanceof Date ? r.addedAt : new Date(r.addedAt);
+        return addedAt <= filter.acquiredBefore!;
+      });
     }
 
     onProgress({ stage: 'Filtering complete', current: totalSteps, total: totalSteps, message: `Found ${releases.length} matching releases` });

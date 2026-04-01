@@ -36,6 +36,21 @@ function promptUser(rl: readline.Interface, question: string): Promise<string> {
   });
 }
 
+export function parseTrackInput(input: string): { type: 'url'; url: string } | { type: 'id'; id: string } | { type: 'invalid' } {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return { type: 'invalid' };
+  }
+  if (trimmed.includes('soundcloud.com')) {
+    return { type: 'url', url: trimmed };
+  }
+  const idMatch = trimmed.match(/^(\d+)$/);
+  if (idMatch) {
+    return { type: 'id', id: idMatch[1] };
+  }
+  return { type: 'invalid' };
+}
+
 export function createReviewCommand(
   soundcloudClient: SoundCloudAPIClient | null,
   db: DatabaseManager
@@ -158,22 +173,44 @@ export function createReviewCommand(
           console.log(chalk.gray('  → Skipped'));
         } else if (input === 'u' || input === 'U') {
           const customInput = await promptUser(rl, '  Enter SoundCloud track ID or URL: ');
-          // Extract numeric ID from URL like https://soundcloud.com/.../... or plain ID
-          const idMatch = customInput.match(/(\d+)/);
-          if (!idMatch) {
-            console.log(chalk.red('  Invalid ID/URL. Please try again.'));
+          const parsed = parseTrackInput(customInput);
+
+          if (parsed.type === 'invalid') {
+            console.log(chalk.red('  Invalid input. Please enter a numeric track ID or SoundCloud URL.'));
             continue;
           }
-          const trackId = idMatch[1];
-          await _resolveTrack(db, batchManager, soundcloudPlaylistId, track.id, trackId, track.discogsReleaseId, track.discogsTrackTitle, String(soundcloudPlaylistId));
+
+          let trackId: string;
+          let resolvedTitle: string | undefined;
+
+          if (parsed.type === 'url') {
+            try {
+              const resource = await clientToUse.resolveUrl(parsed.url);
+              if (resource.kind !== 'track') {
+                console.log(chalk.red(`  URL points to a ${resource.kind}, not a track. Please try again.`));
+                continue;
+              }
+              trackId = String(resource.id);
+              resolvedTitle = resource.title;
+            } catch (error) {
+              const msg = error instanceof Error ? error.message : String(error);
+              console.log(chalk.red(`  Could not resolve URL: ${msg}`));
+              continue;
+            }
+          } else {
+            trackId = parsed.id;
+          }
+
+          await resolveTrack(db, batchManager, soundcloudPlaylistId, track.id, trackId, track.discogsReleaseId, track.discogsTrackTitle, String(soundcloudPlaylistId));
           resolved++;
           answered = true;
-          console.log(chalk.green(`  → Resolved with track ID ${trackId}`));
+          const displayName = resolvedTitle ? `"${resolvedTitle}" (${trackId})` : `track ID ${trackId}`;
+          console.log(chalk.green(`  → Resolved with ${displayName}`));
         } else {
           const num = parseInt(input, 10);
           if (num >= 1 && num <= candidates.length) {
             const chosen = candidates[num - 1];
-            await _resolveTrack(db, batchManager, soundcloudPlaylistId, track.id, chosen.id, track.discogsReleaseId, track.discogsTrackTitle, String(soundcloudPlaylistId));
+            await resolveTrack(db, batchManager, soundcloudPlaylistId, track.id, chosen.id, track.discogsReleaseId, track.discogsTrackTitle, String(soundcloudPlaylistId));
             resolved++;
             answered = true;
             console.log(chalk.green(`  → Resolved: "${chosen.title}"`));
@@ -253,7 +290,44 @@ export function createUnmatchedCommand(db: DatabaseManager) {
   return cmd;
 }
 
-async function _resolveTrack(
+export function createResetCommand(db: DatabaseManager) {
+  const cmd = new Command('reset')
+    .description('Reset resolved or skipped tracks back to pending for re-review')
+    .requiredOption('-t, --title <title>', 'Playlist title')
+    .option('--status <status>', 'Reset only tracks with this status: resolved | skipped')
+    .option('--id <id>', 'Reset a single track by its unmatched track ID');
+
+  cmd.action(async (options) => {
+    const playlistTitle: string = options.title;
+
+    if (options.id) {
+      const id = parseInt(options.id, 10);
+      if (isNaN(id)) {
+        console.log(chalk.red('Invalid track ID.'));
+        process.exit(1);
+      }
+      await db.resetUnmatchedTrack(id);
+      console.log(chalk.green(`Reset track ${id} back to pending.`));
+    } else {
+      const status = options.status as 'resolved' | 'skipped' | undefined;
+      if (status && status !== 'resolved' && status !== 'skipped') {
+        console.log(chalk.red('Status must be "resolved" or "skipped".'));
+        process.exit(1);
+      }
+      const count = await db.resetUnmatchedTracksByPlaylist(playlistTitle, status);
+      const statusLabel = status ? `${status} ` : '';
+      console.log(chalk.green(`Reset ${count} ${statusLabel}track(s) back to pending for "${playlistTitle}".`));
+    }
+
+    const counts = await db.countUnmatchedTracks(playlistTitle);
+    console.log(chalk.gray(`  Pending: ${counts.pending}  Resolved: ${counts.resolved}  Skipped: ${counts.skipped}`));
+    process.exit(0);
+  });
+
+  return cmd;
+}
+
+export async function resolveTrack(
   db: DatabaseManager,
   batchManager: PlaylistBatchManager,
   soundcloudPlaylistId: string,

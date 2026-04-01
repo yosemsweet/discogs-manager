@@ -492,4 +492,73 @@ describe('CollectionService', () => {
       expect(filtered.map(r => r.discogsId).sort()).toEqual([1, 2]);
     });
   });
+
+  describe('filterReleases — date range filtering', () => {
+    const makeRelease = (id: number, overrides: Record<string, any>) => ({
+      discogsId: id,
+      title: `Album ${id}`,
+      artists: `Artist ${id}`,
+      year: 2020,
+      genres: '',
+      styles: '',
+      addedAt: new Date(),
+      ...overrides,
+    });
+
+    const releases = [
+      makeRelease(1, { addedAt: new Date('2024-01-15T12:00:00'), genres: 'Rock' }),
+      makeRelease(2, { addedAt: new Date('2024-06-15T12:00:00'), genres: 'Jazz' }),
+      makeRelease(3, { addedAt: new Date('2024-12-01T12:00:00'), genres: 'Rock' }),
+    ];
+
+    beforeEach(() => {
+      (dbMock.getAllReleases as jest.Mock).mockResolvedValue(releases);
+    });
+
+    test('filters to only releases on or after acquiredAfter', async () => {
+      const filtered = await collectionService.filterReleases({ acquiredAfter: new Date('2024-06-01') });
+
+      expect(filtered).toHaveLength(2);
+      expect(filtered.map(r => r.discogsId).sort()).toEqual([2, 3]);
+    });
+
+    test('filters to only releases on or before acquiredBefore', async () => {
+      const filtered = await collectionService.filterReleases({ acquiredBefore: new Date('2024-06-30T23:59:59.999') });
+
+      expect(filtered).toHaveLength(2);
+      expect(filtered.map(r => r.discogsId).sort()).toEqual([1, 2]);
+    });
+
+    test('filters within a date range when both are provided', async () => {
+      const filtered = await collectionService.filterReleases({
+        acquiredAfter: new Date('2024-03-01'),
+        acquiredBefore: new Date('2024-09-01T23:59:59.999'),
+      });
+
+      expect(filtered).toHaveLength(1);
+      expect(filtered[0].discogsId).toBe(2);
+    });
+
+    test('combines date filter with genre filter', async () => {
+      const filtered = await collectionService.filterReleases({
+        genres: ['Rock'],
+        acquiredAfter: new Date('2024-06-01'),
+      });
+
+      expect(filtered).toHaveLength(1);
+      expect(filtered[0].discogsId).toBe(3);
+    });
+
+    test('returns all releases when no date filter is set', async () => {
+      const filtered = await collectionService.filterReleases({});
+
+      expect(filtered).toHaveLength(3);
+    });
+
+    test('includes release whose addedAt exactly equals the boundary date (inclusive)', async () => {
+      const filtered = await collectionService.filterReleases({ acquiredAfter: new Date('2024-06-15') });
+
+      expect(filtered.map(r => r.discogsId)).toContain(2);
+    });
+  });
 });

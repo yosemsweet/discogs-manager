@@ -20,7 +20,9 @@ export function createListCommand(discogsClient: DiscogsAPIClient, db: DatabaseM
     .option('-s, --styles <styles>', 'Filter by styles (comma-separated)')
     .option('-a, --artists <artists>', 'Filter by artists (comma-separated)')
     .option('-l, --labels <labels>', 'Filter by labels (comma-separated)')
-    .option('--limit <limit>', 'Limit number of results', '50');
+    .option('--limit <limit>', 'Limit number of results', '50')
+    .option('--acquired_after <date>', 'Only include releases acquired on or after this date (YYYY-MM-DD)')
+    .option('--acquired_before <date>', 'Only include releases acquired on or before this date (YYYY-MM-DD)');
 
   cmd.action(async (username, options) => {
     const spinner = CommandBuilder.createSpinner();
@@ -88,6 +90,8 @@ export function createListCommand(discogsClient: DiscogsAPIClient, db: DatabaseM
         styles: options.styles,
         artists: options.artists,
         labels: options.labels,
+        acquiredAfter: options.acquired_after,
+        acquiredBefore: options.acquired_before,
       });
 
       const collectionService = new CollectionService(discogsClient, db);
@@ -107,9 +111,12 @@ export function createListCommand(discogsClient: DiscogsAPIClient, db: DatabaseM
       console.log(chalk.bold(`\n${releases.length} Releases:\n`));
 
       releases.forEach((r) => {
+        const addedAt = r.addedAt instanceof Date ? r.addedAt : new Date(r.addedAt);
+        const addedDate = isNaN(addedAt.getTime()) ? 'Unknown' : addedAt.toISOString().split('T')[0];
         console.log(chalk.cyan(r.title));
         console.log(chalk.gray(`  ${r.artists} (${r.year})`));
         console.log(chalk.gray(`  Genres: ${r.genres}`));
+        console.log(chalk.gray(`  Added: ${addedDate}`));
         console.log();
       });
       process.exit(0);

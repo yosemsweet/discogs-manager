@@ -680,6 +680,30 @@ export class DatabaseManager {
     });
   }
 
+  resetUnmatchedTrack(id: number): Promise<void> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(`
+        UPDATE unmatched_tracks SET status = 'pending', resolvedTrackId = NULL, resolvedAt = NULL WHERE id = ?
+      `);
+      stmt.run(id);
+    });
+  }
+
+  resetUnmatchedTracksByPlaylist(playlistTitle: string, status?: 'resolved' | 'skipped'): Promise<number> {
+    return Promise.resolve().then(() => {
+      let query = `UPDATE unmatched_tracks SET status = 'pending', resolvedTrackId = NULL, resolvedAt = NULL WHERE playlistTitle = ?`;
+      const params: any[] = [playlistTitle];
+      if (status) {
+        query += ` AND status = ?`;
+        params.push(status);
+      } else {
+        query += ` AND status IN ('resolved', 'skipped')`;
+      }
+      const stmt = this.db.prepare(query);
+      return stmt.run(...params).changes;
+    });
+  }
+
   skipUnmatchedTrack(id: number): Promise<void> {
     return Promise.resolve().then(() => {
       const stmt = this.db.prepare(`

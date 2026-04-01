@@ -257,5 +257,19 @@ describe('CLI Commands', () => {
       const genresOption = cmd.options.find((opt) => opt.long === '--genres');
       expect(genresOption?.short).toBe('-g');
     });
+
+    test('playlist command has acquired_after and acquired_before options', () => {
+      const cmd = createPlaylistCommand(mockDiscogsClient, mockSoundCloudClient, mockDb);
+      const options = cmd.options;
+      expect(options.some((opt) => opt.long === '--acquired_after')).toBe(true);
+      expect(options.some((opt) => opt.long === '--acquired_before')).toBe(true);
+    });
+
+    test('list command has acquired_after and acquired_before options', () => {
+      const cmd = createListCommand(mockDiscogsClient, mockDb);
+      const options = cmd.options;
+      expect(options.some((opt) => opt.long === '--acquired_after')).toBe(true);
+      expect(options.some((opt) => opt.long === '--acquired_before')).toBe(true);
+    });
   });
 });

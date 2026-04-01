@@ -30,6 +30,8 @@ export interface PlaylistFilter {
   styles?: string[];
   artists?: string[];
   labels?: string[];
+  acquiredAfter?: Date;
+  acquiredBefore?: Date;
 }
 
 export interface ProgressInfo {

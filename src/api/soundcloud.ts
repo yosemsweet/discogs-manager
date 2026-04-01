@@ -413,4 +413,19 @@ export class SoundCloudAPIClient {
       this.handleError(error, `getPlaylistTracks(${playlistId})`);
     }
   }
+
+  async resolveUrl(url: string): Promise<{ id: number; title: string; kind: string }> {
+    try {
+      if (!url || typeof url !== 'string') {
+        throw new Error('Invalid URL: must be a non-empty string');
+      }
+
+      const response = await this.client.get('/resolve', {
+        params: { url },
+      });
+      return response.data;
+    } catch (error) {
+      this.handleError(error, `resolveUrl(${url})`);
+    }
+  }
 }

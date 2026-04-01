@@ -120,6 +120,27 @@ export class Validator {
             throw new ValidationError('years', 'minYear must be <= maxYear');
         }
 
+        if (options.acquiredAfter) {
+            const date = new Date(options.acquiredAfter);
+            if (isNaN(date.getTime())) {
+                throw new ValidationError('acquiredAfter', 'acquiredAfter must be a valid date (YYYY-MM-DD)');
+            }
+            filter.acquiredAfter = date;
+        }
+
+        if (options.acquiredBefore) {
+            const date = new Date(options.acquiredBefore);
+            if (isNaN(date.getTime())) {
+                throw new ValidationError('acquiredBefore', 'acquiredBefore must be a valid date (YYYY-MM-DD)');
+            }
+            date.setHours(23, 59, 59, 999);
+            filter.acquiredBefore = date;
+        }
+
+        if (filter.acquiredAfter && filter.acquiredBefore && filter.acquiredAfter > filter.acquiredBefore) {
+            throw new ValidationError('acquired_dates', 'acquiredAfter must be <= acquiredBefore');
+        }
+
         if (options.styles && typeof options.styles === 'string') {
             const styles = options.styles.split(',').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
             if (styles.length === 0) {
@@ -243,6 +264,27 @@ export class Validator {
 
         if (filter.minYear && filter.maxYear && filter.minYear > filter.maxYear) {
             throw new ValidationError('years', 'minYear must be <= maxYear');
+        }
+
+        if (options.acquiredAfter) {
+            const date = new Date(options.acquiredAfter);
+            if (isNaN(date.getTime())) {
+                throw new ValidationError('acquiredAfter', 'acquiredAfter must be a valid date (YYYY-MM-DD)');
+            }
+            filter.acquiredAfter = date;
+        }
+
+        if (options.acquiredBefore) {
+            const date = new Date(options.acquiredBefore);
+            if (isNaN(date.getTime())) {
+                throw new ValidationError('acquiredBefore', 'acquiredBefore must be a valid date (YYYY-MM-DD)');
+            }
+            date.setHours(23, 59, 59, 999);
+            filter.acquiredBefore = date;
+        }
+
+        if (filter.acquiredAfter && filter.acquiredBefore && filter.acquiredAfter > filter.acquiredBefore) {
+            throw new ValidationError('acquired_dates', 'acquiredAfter must be <= acquiredBefore');
         }
 
         if (options.styles && typeof options.styles === 'string') {

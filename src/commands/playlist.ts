@@ -13,7 +13,7 @@ import { Validator, ValidationError } from '../utils/validator';
 import { EncryptionService } from '../utils/encryption';
 import { InputSanitizer } from '../utils/sanitizer';
 import { Logger } from '../utils/logger';
-import { createReviewCommand, createUnmatchedCommand } from './review';
+import { createReviewCommand, createUnmatchedCommand, createResetCommand } from './review';
 
 export function createPlaylistCommand(
   discogsClient: DiscogsAPIClient,
@@ -32,7 +32,9 @@ export function createPlaylistCommand(
     .option('--release-ids <ids>', 'Comma-separated Discogs release IDs (for testing)')
     .option('--min-year <year>', 'Minimum year')
     .option('--max-year <year>', 'Maximum year')
-    .option('--private', 'Create as private playlist');
+    .option('--private', 'Create as private playlist')
+    .option('--acquired_after <date>', 'Only include releases acquired on or after this date (YYYY-MM-DD)')
+    .option('--acquired_before <date>', 'Only include releases acquired on or before this date (YYYY-MM-DD)');
 
   cmd.action(async (options) => {
     const spinner = CommandBuilder.createSpinner();
@@ -125,6 +127,10 @@ export function createPlaylistCommand(
         }
       }
 
+      // Map underscore CLI options to camelCase for the validator
+      options.acquiredAfter = options.acquired_after;
+      options.acquiredBefore = options.acquired_before;
+
       // Validate options
       const validated = Validator.validatePlaylistOptions(options);
 
@@ -184,6 +190,7 @@ export function createPlaylistCommand(
   // Register review and unmatched as subcommands of playlist
   cmd.addCommand(createReviewCommand(soundcloudClient, db));
   cmd.addCommand(createUnmatchedCommand(db));
+  cmd.addCommand(createResetCommand(db));
 
   return cmd;
 }

@@ -211,6 +211,54 @@ describe('Validator', () => {
             expect(result.filter.minYear).toBe(1980);
             expect(result.filter.maxYear).toBe(2000);
         });
+
+        describe('date range validation', () => {
+            test('should parse valid acquiredAfter into Date on filter', () => {
+                const options = { title: 'Test', acquiredAfter: '2024-06-01' };
+                const result = Validator.validatePlaylistOptions(options);
+                expect(result.filter.acquiredAfter).toBeInstanceOf(Date);
+                expect(result.filter.acquiredAfter!.toISOString()).toContain('2024-06');
+            });
+
+            test('should parse valid acquiredBefore into Date set to end of day', () => {
+                const options = { title: 'Test', acquiredBefore: '2024-08-15' };
+                const result = Validator.validatePlaylistOptions(options);
+                expect(result.filter.acquiredBefore).toBeInstanceOf(Date);
+                expect(result.filter.acquiredBefore!.getHours()).toBe(23);
+                expect(result.filter.acquiredBefore!.getMinutes()).toBe(59);
+                expect(result.filter.acquiredBefore!.getSeconds()).toBe(59);
+            });
+
+            test('should parse both acquiredAfter and acquiredBefore together', () => {
+                const options = { title: 'Test', acquiredAfter: '2024-06-01', acquiredBefore: '2024-08-15' };
+                const result = Validator.validatePlaylistOptions(options);
+                expect(result.filter.acquiredAfter).toBeInstanceOf(Date);
+                expect(result.filter.acquiredBefore).toBeInstanceOf(Date);
+                expect(result.filter.acquiredAfter! < result.filter.acquiredBefore!).toBe(true);
+            });
+
+            test('should reject invalid date string for acquiredAfter', () => {
+                const options = { title: 'Test', acquiredAfter: 'not-a-date' };
+                expect(() => Validator.validatePlaylistOptions(options)).toThrow(ValidationError);
+            });
+
+            test('should reject invalid date string for acquiredBefore', () => {
+                const options = { title: 'Test', acquiredBefore: '2024-13-01' };
+                expect(() => Validator.validatePlaylistOptions(options)).toThrow(ValidationError);
+            });
+
+            test('should reject when acquiredAfter is after acquiredBefore', () => {
+                const options = { title: 'Test', acquiredAfter: '2025-01-01', acquiredBefore: '2024-01-01' };
+                expect(() => Validator.validatePlaylistOptions(options)).toThrow(ValidationError);
+            });
+
+            test('should not set date fields when neither option is provided', () => {
+                const options = { title: 'Test' };
+                const result = Validator.validatePlaylistOptions(options);
+                expect(result.filter.acquiredAfter).toBeUndefined();
+                expect(result.filter.acquiredBefore).toBeUndefined();
+            });
+        });
     });
 
     describe('validateStatsOptions', () => {
