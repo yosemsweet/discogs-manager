@@ -113,7 +113,7 @@ export function createListCommand(discogsClient: DiscogsAPIClient, db: DatabaseM
       releases.forEach((r) => {
         const addedAt = r.addedAt instanceof Date ? r.addedAt : new Date(r.addedAt);
         const addedDate = isNaN(addedAt.getTime()) ? 'Unknown' : addedAt.toISOString().split('T')[0];
-        console.log(chalk.cyan(r.title));
+        console.log(chalk.cyan(r.title) + chalk.gray(` [${r.discogsId}]`));
         console.log(chalk.gray(`  ${r.artists} (${r.year})`));
         console.log(chalk.gray(`  Genres: ${r.genres}`));
         console.log(chalk.gray(`  Added: ${addedDate}`));
