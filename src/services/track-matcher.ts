@@ -251,24 +251,23 @@ export class TrackMatcher {
       ? QueryNormalizer.normalizeTrackTitle(candidate.title)
       : '';
 
-    // Handle "Artist - Title" format common on SoundCloud (e.g. "The Notwist - blank air")
-    // If the candidate title contains " - ", try stripping the artist prefix for a better title match
-    // and use the stripped artist portion to boost the artist score
+    // Handle "Artist - Title" format common on SoundCloud (e.g. "The Notwist - blank air").
+    // Operate on the raw candidate title so the detection is consistent with filterByArtistGate.
+    // If stripping the prefix yields a better title similarity, use the stripped form for scoring.
+    const rawEmbeddedArtist = this.extractEmbeddedArtist(candidate.title || '');
     let candidateEmbeddedArtist: string | null = null;
-    if (normCandidateTitle.includes(' - ')) {
-      const dashIdx = normCandidateTitle.indexOf(' - ');
-      const prefix = normCandidateTitle.substring(0, dashIdx).trim();
-      const suffix = normCandidateTitle.substring(dashIdx + 3).trim();
+    if (rawEmbeddedArtist) {
+      const dashIdx = (candidate.title || '').indexOf(' - ');
+      const rawSuffix = (candidate.title || '').substring(dashIdx + 3).trim();
+      const normSuffix = rawSuffix ? QueryNormalizer.normalizeTrackTitle(rawSuffix) : '';
 
-      if (prefix && suffix) {
-        const titleWithoutPrefix = suffix;
+      if (normSuffix) {
         const simWithPrefix = this.calculateStringSimilarity(normExpectedTitle, normCandidateTitle);
-        const simWithoutPrefix = this.calculateStringSimilarity(normExpectedTitle, titleWithoutPrefix);
+        const simWithoutPrefix = this.calculateStringSimilarity(normExpectedTitle, normSuffix);
 
-        // Use the stripped version if it's a better title match
         if (simWithoutPrefix > simWithPrefix) {
-          normCandidateTitle = titleWithoutPrefix;
-          candidateEmbeddedArtist = prefix;
+          normCandidateTitle = normSuffix;
+          candidateEmbeddedArtist = rawEmbeddedArtist;
         }
       }
     }
@@ -389,14 +388,11 @@ export class TrackMatcher {
       }
 
       // Also check "Artist - Title" embedded artist in the candidate title
-      if (candidate.title && candidate.title.includes(' - ')) {
-        const dashIdx = candidate.title.indexOf(' - ');
-        const prefix = candidate.title.substring(0, dashIdx).trim();
-        if (prefix) {
-          const normPrefix = QueryNormalizer.normalizeArtistName(prefix);
-          const prefixSim = this.calculateStringSimilarity(normExpectedArtist, normPrefix);
-          artistSim = Math.max(artistSim, prefixSim);
-        }
+      const embeddedArtist = this.extractEmbeddedArtist(candidate.title || '');
+      if (embeddedArtist) {
+        const normPrefix = QueryNormalizer.normalizeArtistName(embeddedArtist);
+        const prefixSim = this.calculateStringSimilarity(normExpectedArtist, normPrefix);
+        artistSim = Math.max(artistSim, prefixSim);
       }
 
       return artistSim >= this.ARTIST_GATE_THRESHOLD;
@@ -563,13 +559,13 @@ export class TrackMatcher {
       }
     }
 
-    // Both dimensions must contribute — a great title with wrong artist shouldn't match
-    if (titleScore < 0.3 || artistScore < 0.3) {
-      return Math.min(titleScore, artistScore) * 0.5;
-    }
+    // Title must be decent — reject weak title regardless of artist
+    if (titleScore < 0.3) return titleScore * 0.5;
 
-    // Weight: 50% title, 50% artist for playlists (artist is critical for disambiguation)
-    return titleScore * 0.5 + artistScore * 0.5;
+    // Artist is a boost, not a gate. A label or fan playlist with a matching title
+    // can still be selected even if the uploader name doesn't resemble the artist.
+    // Weight: title 65%, artist 35%
+    return titleScore * 0.65 + artistScore * 0.35;
   }
 
   /**
@@ -584,6 +580,20 @@ export class TrackMatcher {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Extract the artist prefix from an "Artist - Title" formatted string.
+   * Operates on the raw (un-normalized) title so both scoreMatch and filterByArtistGate
+   * see the same source data. Artist comparison is always done via normalizeArtistName().
+   *
+   * @returns The artist prefix (e.g. "The Notwist") or null if pattern not present.
+   */
+  private static extractEmbeddedArtist(rawTitle: string): string | null {
+    if (!rawTitle || !rawTitle.includes(' - ')) return null;
+    const dashIdx = rawTitle.indexOf(' - ');
+    const prefix = rawTitle.substring(0, dashIdx).trim();
+    return prefix || null;
   }
 
   /**

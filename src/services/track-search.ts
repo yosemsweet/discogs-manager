@@ -218,7 +218,9 @@ export class TrackSearchService {
                 Logger.debug(`  SC track: "${pt.title}" by ${pt.user?.username} (id: ${pt.id})`);
             }
 
-            // Map playlist tracks to Discogs tracks
+            // Map playlist tracks to Discogs tracks.
+            // position = array index (0-based), used below to recover the original track
+            // object from the `tracks` array when building unmatchedTracks.
             const discogsTrackInfos: DiscogsTrackInfo[] = tracks.map((t: any, i: number) => ({
                 title: t.title,
                 artists: t.artists || '',

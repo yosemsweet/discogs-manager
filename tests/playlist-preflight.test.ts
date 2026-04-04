@@ -119,17 +119,28 @@ describe('TrackMatcher.scorePlaylistMatch', () => {
     expect(artistScore).toBeGreaterThan(0.5);
   });
 
-  it('requires both title and artist similarity', () => {
-    const wrongArtistPlaylist = makePlaylist({
+  it('title-only match can exceed threshold (artist is boost, not gate)', () => {
+    const labelPlaylist = makePlaylist({
       id: '1',
       title: 'Lesotho EP',
       user: { username: 'completelyunrelated' },
     });
 
-    const score = TrackMatcher.scorePlaylistMatch('Lesotho EP', 'Touane', wrongArtistPlaylist);
+    const score = TrackMatcher.scorePlaylistMatch('Lesotho EP', 'Touane', labelPlaylist);
 
-    // Should be low because artist doesn't match even though title does
-    expect(score).toBeLessThan(0.5);
+    // Title match is strong (1.0), artist doesn't match (0), so score = 0.65.
+    // A label or fan upload with a matching title should still qualify.
+    expect(score).toBeGreaterThan(0.5);
+
+    // Artist's own playlist should score higher than the label's
+    const artistPlaylist = makePlaylist({
+      id: '2',
+      title: 'Lesotho EP',
+      user: { username: 'touaneofficial' },
+      permalink_url: 'https://soundcloud.com/touaneofficial/sets/lesotho-ep',
+    });
+    const artistScore = TrackMatcher.scorePlaylistMatch('Lesotho EP', 'Touane', artistPlaylist);
+    expect(artistScore).toBeGreaterThan(score);
   });
 
   it('uses URL slug for artist matching', () => {

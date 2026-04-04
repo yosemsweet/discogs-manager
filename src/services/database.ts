@@ -335,13 +335,18 @@ export class DatabaseManager {
           `DELETE FROM playlist_releases WHERE playlistId = ?`
         ).run(playlistId);
 
-        // Delete track_matches for these releases
+        // Delete track_matches only for releases that are not in any other playlist.
+        // A release shared across playlists retains its cached matches.
         let trackMatchCount = 0;
         if (releaseIds.length > 0) {
           const placeholders = releaseIds.map(() => '?').join(',');
           trackMatchCount = this.db.prepare(
-            `DELETE FROM track_matches WHERE discogsReleaseId IN (${placeholders})`
-          ).run(...releaseIds).changes;
+            `DELETE FROM track_matches
+             WHERE discogsReleaseId IN (${placeholders})
+               AND discogsReleaseId NOT IN (
+                 SELECT releaseId FROM playlist_releases WHERE playlistId != ?
+               )`
+          ).run(...releaseIds, playlistId).changes;
         }
 
         // Delete unmatched_tracks for this playlist

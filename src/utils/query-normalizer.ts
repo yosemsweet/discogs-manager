@@ -60,8 +60,8 @@ export class QueryNormalizer {
       .trim()
       // Strip ALL parentheticals — we want broad search results
       .replace(/\([^)]*\)/g, '')
-      // Remove dash-prefixed qualifiers
-      .replace(/\s+-\s+\S+(\s+\S+)*/g, '')
+      // Remove dash-prefixed known qualifiers only (don't strip arbitrary content after " - ")
+      .replace(/\s+-\s+(remaster(ed)?|remix|edit|live|version|radio|album|single|explicit|clean|deluxe|bonus)(\s+\S+)*/gi, '')
       // Remove featuring information
       .replace(/[\(\[]?\s*(?:feat\.?|ft\.?|featuring)\s+[^\)\]]+[\)\]]?/gi, '')
       // Remove square brackets with content
