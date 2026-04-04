@@ -12,8 +12,8 @@ import { CommandBuilder } from '../utils/command-builder';
 import { Validator, ValidationError } from '../utils/validator';
 import { EncryptionService } from '../utils/encryption';
 import { InputSanitizer } from '../utils/sanitizer';
-import { Logger } from '../utils/logger';
-import { createReviewCommand, createUnmatchedCommand, createResetCommand } from './review';
+import { Logger, LogLevel } from '../utils/logger';
+import { createReviewCommand, createUnmatchedCommand, createResetCommand, createDeleteCommand } from './review';
 
 export function createPlaylistCommand(
   discogsClient: DiscogsAPIClient,
@@ -34,12 +34,17 @@ export function createPlaylistCommand(
     .option('--max-year <year>', 'Maximum year')
     .option('--private', 'Create as private playlist')
     .option('--acquired_after <date>', 'Only include releases acquired on or after this date (YYYY-MM-DD)')
-    .option('--acquired_before <date>', 'Only include releases acquired on or before this date (YYYY-MM-DD)');
+    .option('--acquired_before <date>', 'Only include releases acquired on or before this date (YYYY-MM-DD)')
+    .option('-v, --verbose', 'Show detailed matching/search debug output');
 
   cmd.action(async (options) => {
     const spinner = CommandBuilder.createSpinner();
 
     try {
+      // Enable debug logging when --verbose is passed
+      if (options.verbose) {
+        Logger.setLogLevel(LogLevel.DEBUG);
+      }
       // Sanitize input options for security
       if (options.title) {
         const sanitized = InputSanitizer.sanitizePlaylistName(options.title);
@@ -191,6 +196,7 @@ export function createPlaylistCommand(
   cmd.addCommand(createReviewCommand(soundcloudClient, db));
   cmd.addCommand(createUnmatchedCommand(db));
   cmd.addCommand(createResetCommand(db));
+  cmd.addCommand(createDeleteCommand(soundcloudClient, db));
 
   return cmd;
 }

@@ -165,6 +165,81 @@ async function main() {
       console.error('POST failed:', e.response?.status, JSON.stringify(e.response?.data, null, 2));
     }
   }
+  // --- 7. Playlist search diagnostic: test different endpoints ---
+  console.log('=== Playlist Search Diagnostic ===');
+  const testQuery = 'Touane Lesotho EP';
+
+  // Try GET /playlists?q= (current implementation)
+  console.log(`\n--- GET /playlists?q=${testQuery} ---`);
+  try {
+    const res = await client.get('/playlists', { params: { q: testQuery, limit: 5 } });
+    const data = res.data;
+    const playlists = Array.isArray(data) ? data : (data?.collection ?? []);
+    console.log(`Status: ${res.status}, Results: ${playlists.length}`);
+    for (const p of playlists.slice(0, 3)) {
+      console.log(`  - "${p.title}" by ${p.user?.username} (id: ${p.id}, tracks: ${p.track_count ?? '?'})`);
+      if (p.permalink_url) console.log(`    ${p.permalink_url}`);
+    }
+    if (playlists.length === 0) console.log('  (no results)');
+  } catch (e: any) {
+    console.error(`  FAILED: ${e.response?.status} ${JSON.stringify(e.response?.data)}`);
+  }
+
+  // Try GET /search/playlists?q= (alternative endpoint)
+  console.log(`\n--- GET /search/playlists?q=${testQuery} ---`);
+  try {
+    const res = await client.get('/search/playlists', { params: { q: testQuery, limit: 5 } });
+    const data = res.data;
+    const playlists = Array.isArray(data) ? data : (data?.collection ?? []);
+    console.log(`Status: ${res.status}, Results: ${playlists.length}`);
+    for (const p of playlists.slice(0, 3)) {
+      console.log(`  - "${p.title}" by ${p.user?.username} (id: ${p.id}, tracks: ${p.track_count ?? '?'})`);
+      if (p.permalink_url) console.log(`    ${p.permalink_url}`);
+    }
+    if (playlists.length === 0) console.log('  (no results)');
+  } catch (e: any) {
+    console.error(`  FAILED: ${e.response?.status} ${JSON.stringify(e.response?.data)}`);
+  }
+
+  // Try GET /playlists?q= on api-v2 base
+  console.log(`\n--- GET api-v2.soundcloud.com/playlists?q=${testQuery} ---`);
+  try {
+    const v2Client = axios.create({
+      baseURL: 'https://api-v2.soundcloud.com',
+      headers: { Authorization: `OAuth ${token}` },
+    });
+    const res = await v2Client.get('/playlists', { params: { q: testQuery, limit: 5 } });
+    const data = res.data;
+    const playlists = Array.isArray(data) ? data : (data?.collection ?? []);
+    console.log(`Status: ${res.status}, Results: ${playlists.length}`);
+    for (const p of playlists.slice(0, 3)) {
+      console.log(`  - "${p.title}" by ${p.user?.username} (id: ${p.id}, tracks: ${p.track_count ?? '?'})`);
+      if (p.permalink_url) console.log(`    ${p.permalink_url}`);
+    }
+    if (playlists.length === 0) console.log('  (no results)');
+  } catch (e: any) {
+    console.error(`  FAILED: ${e.response?.status} ${JSON.stringify(e.response?.data)}`);
+  }
+
+  // Try GET /search/playlists on api-v2
+  console.log(`\n--- GET api-v2.soundcloud.com/search/playlists?q=${testQuery} ---`);
+  try {
+    const v2Client = axios.create({
+      baseURL: 'https://api-v2.soundcloud.com',
+      headers: { Authorization: `OAuth ${token}` },
+    });
+    const res = await v2Client.get('/search/playlists', { params: { q: testQuery, limit: 5 } });
+    const data = res.data;
+    const playlists = Array.isArray(data) ? data : (data?.collection ?? []);
+    console.log(`Status: ${res.status}, Results: ${playlists.length}`);
+    for (const p of playlists.slice(0, 3)) {
+      console.log(`  - "${p.title}" by ${p.user?.username} (id: ${p.id}, tracks: ${p.track_count ?? '?'})`);
+      if (p.permalink_url) console.log(`    ${p.permalink_url}`);
+    }
+    if (playlists.length === 0) console.log('  (no results)');
+  } catch (e: any) {
+    console.error(`  FAILED: ${e.response?.status} ${JSON.stringify(e.response?.data)}`);
+  }
 }
 
 main().catch(console.error);
