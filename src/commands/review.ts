@@ -363,7 +363,6 @@ export function createDeleteCommand(
       console.log(chalk.yellow('This will remove all local data. The SoundCloud playlist will be kept.'));
     }
 
-    // Confirm unless --yes
     if (!options.yes) {
       const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
       const answer = await new Promise<string>((resolve) => {

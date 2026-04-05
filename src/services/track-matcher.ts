@@ -257,8 +257,8 @@ export class TrackMatcher {
     const rawEmbeddedArtist = this.extractEmbeddedArtist(candidate.title || '');
     let candidateEmbeddedArtist: string | null = null;
     if (rawEmbeddedArtist) {
-      const dashIdx = (candidate.title || '').indexOf(' - ');
-      const rawSuffix = (candidate.title || '').substring(dashIdx + 3).trim();
+      // Suffix starts after "<prefix> - " (prefix.length + 3 chars for " - ")
+      const rawSuffix = (candidate.title || '').substring(rawEmbeddedArtist.length + 3).trim();
       const normSuffix = rawSuffix ? QueryNormalizer.normalizeTrackTitle(rawSuffix) : '';
 
       if (normSuffix) {
@@ -289,16 +289,7 @@ export class TrackMatcher {
       }
 
       // Also check URL slug for artist match (slug is often closer to artist name than display name)
-      if (candidate.permalink_url) {
-        const slug = this.extractSlugFromUrl(candidate.permalink_url);
-        if (slug) {
-          const slugScore = this.calculateStringSimilarity(
-            normExpectedArtist,
-            slug.replace(/[-_]/g, ' ')
-          );
-          artistScore = Math.max(artistScore, slugScore);
-        }
-      }
+      artistScore = Math.max(artistScore, this.scoreArtistFromUrl(normExpectedArtist, candidate.permalink_url));
 
       // Also check the embedded artist from "Artist - Title" format
       if (candidateEmbeddedArtist) {
@@ -360,8 +351,8 @@ export class TrackMatcher {
     expectedArtist: string,
     candidates: MatchCandidate[]
   ): MatchCandidate[] {
-    if (!expectedArtist || !candidates || candidates.length === 0) {
-      return candidates || [];
+    if (!expectedArtist || candidates.length === 0) {
+      return candidates;
     }
 
     const normExpectedArtist = QueryNormalizer.normalizeArtistName(expectedArtist);
@@ -373,19 +364,12 @@ export class TrackMatcher {
       if (candidate.user?.username) {
         const normCandidateUser = QueryNormalizer.normalizeArtistName(candidate.user.username);
         artistSim = this.calculateStringSimilarity(normExpectedArtist, normCandidateUser);
+        if (artistSim >= 1.0) return true;
       }
 
       // Also check URL slug
-      if (candidate.permalink_url) {
-        const slug = this.extractSlugFromUrl(candidate.permalink_url);
-        if (slug) {
-          const slugSim = this.calculateStringSimilarity(
-            normExpectedArtist,
-            slug.replace(/[-_]/g, ' ')
-          );
-          artistSim = Math.max(artistSim, slugSim);
-        }
-      }
+      artistSim = Math.max(artistSim, this.scoreArtistFromUrl(normExpectedArtist, candidate.permalink_url));
+      if (artistSim >= 1.0) return true;
 
       // Also check "Artist - Title" embedded artist in the candidate title
       const embeddedArtist = this.extractEmbeddedArtist(candidate.title || '');
@@ -547,16 +531,7 @@ export class TrackMatcher {
       artistScore = this.calculateStringSimilarity(normExpectedArtist, normUploader);
 
       // Also check URL slug for artist match (slug often closer to artist name)
-      if (playlist.permalink_url) {
-        const slug = this.extractSlugFromUrl(playlist.permalink_url);
-        if (slug) {
-          const slugScore = this.calculateStringSimilarity(
-            normExpectedArtist,
-            slug.replace(/[-_]/g, ' ')
-          );
-          artistScore = Math.max(artistScore, slugScore);
-        }
-      }
+      artistScore = Math.max(artistScore, this.scoreArtistFromUrl(normExpectedArtist, playlist.permalink_url));
     }
 
     // Title must be decent — reject weak title regardless of artist
@@ -580,6 +555,17 @@ export class TrackMatcher {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Score expected artist against the uploader slug from a SoundCloud URL.
+   * Normalizes slug dashes/underscores to spaces before comparing.
+   */
+  private static scoreArtistFromUrl(normExpectedArtist: string, permalinkUrl: string | undefined): number {
+    if (!permalinkUrl) return 0;
+    const slug = this.extractSlugFromUrl(permalinkUrl);
+    if (!slug) return 0;
+    return this.calculateStringSimilarity(normExpectedArtist, slug.replace(/[-_]/g, ' '));
   }
 
   /**

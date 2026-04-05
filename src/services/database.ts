@@ -314,17 +314,16 @@ export class DatabaseManager {
     unmatchedTracks: number;
   }> {
     return Promise.resolve().then(() => {
-      const playlist = this.db.prepare(
-        `SELECT id FROM playlists WHERE title = ? ORDER BY updatedAt DESC LIMIT 1`
-      ).get(title) as any;
-
-      if (!playlist) {
-        return { playlistDeleted: false, releaseMappings: 0, trackMatches: 0, unmatchedTracks: 0 };
-      }
-
-      const playlistId = String(playlist.id);
-
       const tx = this.db.transaction(() => {
+        const playlist = this.db.prepare(
+          `SELECT id FROM playlists WHERE title = ? ORDER BY updatedAt DESC LIMIT 1`
+        ).get(title) as any;
+
+        if (!playlist) {
+          return { playlistDeleted: false, releaseMappings: 0, trackMatches: 0, unmatchedTracks: 0 };
+        }
+
+        const playlistId = playlist.id;
         // Get release IDs associated with this playlist for track_matches cleanup
         const releaseIds = (this.db.prepare(
           `SELECT DISTINCT releaseId FROM playlist_releases WHERE playlistId = ?`

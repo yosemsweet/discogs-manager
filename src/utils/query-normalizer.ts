@@ -27,11 +27,8 @@ export class QueryNormalizer {
 
     return title
       .trim()
-      // Remove parentheticals with NON-musical qualifiers (remastered, explicit, clean, radio, album, single)
-      // but PRESERVE musical qualifiers like remix, edit, version (e.g. "Ada remix", "Special Edit")
+      // Remove non-musical parentheticals; strip the parens from musical ones (remix/edit/version)
       .replace(/\(.*?(remaster(ed)?|radio\s*(edit|mix|version)|album\s*version|single\s*version|explicit|clean|deluxe|bonus).*?\)/gi, '')
-      // Extract and preserve remix/edit/version qualifiers from parentheses
-      // e.g. "(Ada remix)" → "Ada remix", "(Special Edit)" → "Special Edit"
       .replace(/\(([^)]*(?:remix|edit|mix|version|dub)[^)]*)\)/gi, ' $1')
       // Remove dash-prefixed NON-musical version qualifiers
       .replace(/\s+-\s+(remaster(ed)?|live|radio\s*(edit|mix)|album\s*version|single\s*version|explicit|clean|deluxe|bonus)(\s+\S+)*/gi, '')
