@@ -14,6 +14,7 @@ import { EncryptionService } from '../utils/encryption';
 import { InputSanitizer } from '../utils/sanitizer';
 import { Logger, LogLevel } from '../utils/logger';
 import { createReviewCommand, createUnmatchedCommand, createResetCommand, createDeleteCommand } from './review';
+import { createExportCommand } from './export';
 
 export function createPlaylistCommand(
   discogsClient: DiscogsAPIClient,
@@ -197,6 +198,7 @@ export function createPlaylistCommand(
   cmd.addCommand(createUnmatchedCommand(db));
   cmd.addCommand(createResetCommand(db));
   cmd.addCommand(createDeleteCommand(soundcloudClient, db));
+  cmd.addCommand(createExportCommand(db));
 
   return cmd;
 }

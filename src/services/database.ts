@@ -116,6 +116,7 @@ export class DatabaseManager {
           confidence REAL NOT NULL,
           matchedTitle TEXT,
           matchedArtist TEXT,
+          matchedPermalinkUrl TEXT,
           createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
           PRIMARY KEY (discogsReleaseId, discogsTrackTitle),
           FOREIGN KEY (discogsReleaseId) REFERENCES releases(discogsId)
@@ -157,6 +158,9 @@ export class DatabaseManager {
       }
       if (currentVersion < 4) {
         this.migrateToVersion4();
+      }
+      if (currentVersion < 5) {
+        this.migrateToVersion5();
       }
     });
   }
@@ -505,10 +509,10 @@ export class DatabaseManager {
   getCachedTrackMatch(
     releaseId: number,
     trackTitle: string
-  ): Promise<{ soundcloudTrackId: string; confidence: number; matchedTitle: string } | null> {
+  ): Promise<{ soundcloudTrackId: string; confidence: number; matchedTitle: string; matchedPermalinkUrl: string | null } | null> {
     return Promise.resolve().then(() => {
       const stmt = this.db.prepare(
-        `SELECT soundcloudTrackId, confidence, matchedTitle
+        `SELECT soundcloudTrackId, confidence, matchedTitle, matchedPermalinkUrl
          FROM track_matches
          WHERE discogsReleaseId = ? AND discogsTrackTitle = ?`
       );
@@ -519,6 +523,7 @@ export class DatabaseManager {
             soundcloudTrackId: result.soundcloudTrackId,
             confidence: result.confidence,
             matchedTitle: result.matchedTitle,
+            matchedPermalinkUrl: result.matchedPermalinkUrl || null,
           }
         : null;
     });
@@ -547,6 +552,7 @@ export class DatabaseManager {
    * @param confidence - Match confidence score (0-1)
    * @param matchedTitle - Title of matched SoundCloud track
    * @param matchedArtist - Artist of matched SoundCloud track (optional)
+   * @param matchedPermalinkUrl - Permalink URL of matched SoundCloud track (optional)
    */
   saveCachedTrackMatch(
     releaseId: number,
@@ -554,16 +560,17 @@ export class DatabaseManager {
     soundcloudTrackId: string,
     confidence: number,
     matchedTitle: string,
-    matchedArtist?: string
+    matchedArtist?: string,
+    matchedPermalinkUrl?: string
   ): Promise<void> {
     return Promise.resolve().then(() => {
       const stmt = this.db.prepare(
         `INSERT OR REPLACE INTO track_matches
-         (discogsReleaseId, discogsTrackTitle, soundcloudTrackId, confidence, matchedTitle, matchedArtist)
-         VALUES (?, ?, ?, ?, ?, ?)`
+         (discogsReleaseId, discogsTrackTitle, soundcloudTrackId, confidence, matchedTitle, matchedArtist, matchedPermalinkUrl)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
       );
 
-      stmt.run(releaseId, trackTitle, soundcloudTrackId, confidence, matchedTitle, matchedArtist || null);
+      stmt.run(releaseId, trackTitle, soundcloudTrackId, confidence, matchedTitle, matchedArtist || null, matchedPermalinkUrl || null);
     });
   }
 
@@ -734,6 +741,27 @@ export class DatabaseManager {
     }
   }
 
+  /**
+   * Migrate database from version 4 to version 5
+   * Adds matchedPermalinkUrl column to track_matches for storing the SoundCloud
+   * permalink URL alongside the numeric track ID.
+   */
+  private migrateToVersion5(): void {
+    try {
+      // Only add the column if it does not already exist (fresh databases include it
+      // in the CREATE TABLE statement, so the ALTER would fail with "duplicate column").
+      const columns = this.db.pragma('table_info(track_matches)') as Array<{ name: string }>;
+      const hasColumn = columns.some(c => c.name === 'matchedPermalinkUrl');
+      if (!hasColumn) {
+        this.db.exec('ALTER TABLE track_matches ADD COLUMN matchedPermalinkUrl TEXT');
+      }
+      this.setSchemaVersion(5);
+    } catch (err) {
+      console.error('Migration to version 5 failed:', err);
+      throw err;
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Unmatched tracks — manual review queue
   // ---------------------------------------------------------------------------
@@ -834,6 +862,103 @@ export class DatabaseManager {
         UPDATE unmatched_tracks SET status = 'skipped' WHERE id = ?
       `);
       stmt.run(id);
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Playlist export
+  // ---------------------------------------------------------------------------
+
+  getPlaylistExportMatched(playlistId: string): Promise<Array<{
+    discogs_artist: string;
+    discogs_release: string;
+    discogs_track: string;
+    soundcloud_track: string;
+    soundcloud_track_id: string;
+    soundcloud_permalink_url: string | null;
+    confidence: number;
+  }>> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(`
+        SELECT
+          r.artists AS discogs_artist,
+          r.title AS discogs_release,
+          COALESCE(tm.discogsTrackTitle, '') AS discogs_track,
+          COALESCE(tm.matchedTitle, '') AS soundcloud_track,
+          pr.soundcloudTrackId AS soundcloud_track_id,
+          tm.matchedPermalinkUrl AS soundcloud_permalink_url,
+          COALESCE(tm.confidence, 0) AS confidence
+        FROM playlist_releases pr
+        JOIN releases r ON r.discogsId = pr.releaseId
+        LEFT JOIN track_matches tm
+          ON tm.discogsReleaseId = pr.releaseId AND tm.soundcloudTrackId = pr.soundcloudTrackId
+        WHERE pr.playlistId = ?
+        ORDER BY r.title, tm.discogsTrackTitle
+      `);
+      return (stmt.all(playlistId) as any[]) || [];
+    });
+  }
+
+  getPlaylistExportUnmatched(playlistTitle: string): Promise<Array<{
+    discogs_artist: string;
+    discogs_release: string;
+    discogs_track: string;
+  }>> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(`
+        SELECT
+          COALESCE(discogsArtist, '') AS discogs_artist,
+          COALESCE(releaseTitle, '') AS discogs_release,
+          discogsTrackTitle AS discogs_track
+        FROM unmatched_tracks
+        WHERE playlistTitle = ?
+        ORDER BY releaseTitle, discogsTrackTitle
+      `);
+      return (stmt.all(playlistTitle) as any[]) || [];
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Reverse lookup
+  // ---------------------------------------------------------------------------
+
+  getTrackLookupData(soundcloudTrackId: string): Promise<{
+    discogsTrackTitle: string;
+    discogsArtist: string;
+    discogsRelease: string;
+    discogsReleaseId: number;
+    playlists: string[];
+  } | null> {
+    return Promise.resolve().then(() => {
+      const track = this.db.prepare(`
+        SELECT
+          tm.discogsTrackTitle,
+          r.artists AS discogsArtist,
+          r.title AS discogsRelease,
+          r.discogsId AS discogsReleaseId
+        FROM track_matches tm
+        JOIN releases r ON r.discogsId = tm.discogsReleaseId
+        WHERE tm.soundcloudTrackId = ?
+        LIMIT 1
+      `).get(soundcloudTrackId) as any;
+
+      if (!track) return null;
+
+      const playlists = (this.db.prepare(`
+        SELECT DISTINCT p.title
+        FROM playlist_releases pr
+        JOIN playlists p ON p.id = pr.playlistId
+        WHERE pr.soundcloudTrackId = ?
+        ORDER BY p.title
+      `).all(soundcloudTrackId) as Array<{ title: string }>).map(p => p.title);
+
+      return {
+        discogsTrackTitle: track.discogsTrackTitle,
+        discogsArtist: track.discogsArtist,
+        discogsRelease: track.discogsRelease,
+        discogsReleaseId: track.discogsReleaseId,
+        playlists,
+      };
     });
   }
 

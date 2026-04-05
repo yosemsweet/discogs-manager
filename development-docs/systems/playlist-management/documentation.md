@@ -17,9 +17,17 @@ npm run dev -- playlist --title "My Jazz" --verbose   # debug-level logging
 # Review and resolve unmatched tracks
 npm run dev -- playlist review --title "My Jazz"
 
+# Export playlist track matches to CSV
+npm run dev -- playlist export --title "My Jazz"                    # stdout
+npm run dev -- playlist export --title "My Jazz" --out ./my-jazz.csv
+
 # Delete a playlist
 npm run dev -- playlist delete --title "My Jazz"
 npm run dev -- playlist delete --title "My Jazz" --keep-remote   # local data only
+
+# Reverse lookup: find the Discogs track and playlists for a SoundCloud URL
+npm run dev -- lookup https://soundcloud.com/artist/track-name
+npm run dev -- lookup "https://soundcloud.com/artist/track?in=artist/sets/album&si=abc123"
 ```
 
 ---
@@ -70,12 +78,46 @@ playlist delete command
 
 ---
 
+## Export Flow
+
+```
+playlist export command
+  → generatePlaylistCsv(db, title)
+      1. Look up playlist by title in DB
+      2. Query playlist_releases JOIN track_matches → matched rows
+      3. Query unmatched_tracks → unmatched rows
+      4. Build RFC-4180 CSV (matched first, then unmatched)
+      5. Write to --out path or stdout
+```
+
+**No SoundCloud API calls are made** — the export reads entirely from the local database.
+
+CSV columns: `discogs_artist`, `discogs_release`, `discogs_track`, `soundcloud_track`, `soundcloud_url`, `confidence`, `status`
+
+---
+
+## Reverse Lookup Flow
+
+```
+lookup command
+  → SoundCloudAPIClient.resolveUrl(url)   ← always via /resolve, never regex
+      → track ID
+  → DatabaseManager.getTrackLookupData(trackId)
+      → Discogs track title, artist, release title, release ID
+      → All playlist titles containing the track
+  → Print plain-text output
+```
+
+---
+
 ## Key Files
 
 | File | Responsibility |
 |------|---------------|
-| `src/commands/playlist.ts` | `playlist` and `playlist delete` CLI |
-| `src/commands/review.ts` | `playlist review` and `playlist delete` logic |
+| `src/commands/playlist.ts` | `playlist` CLI and subcommand registration |
+| `src/commands/review.ts` | `playlist review`, `playlist delete`, etc. |
+| `src/commands/export.ts` | `playlist export` — CSV generation |
+| `src/commands/lookup.ts` | `lookup` — reverse SoundCloud URL lookup |
 | `src/services/playlist.ts` | `PlaylistService` — create/update orchestration |
 | `src/services/playlist-batch.ts` | `PlaylistBatchManager` — chunked SoundCloud API calls |
 | `src/services/track-search.ts` | Track matching orchestration |

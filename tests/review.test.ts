@@ -202,6 +202,7 @@ describe('resolveTrack', () => {
       'cached-track-id',
       1.0,
       'My Track Title',
+      undefined,
       undefined
     );
   });

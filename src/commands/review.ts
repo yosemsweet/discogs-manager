@@ -183,6 +183,7 @@ export function createReviewCommand(
           let trackId: string;
           let resolvedTitle: string | undefined;
 
+          let resolvedPermalinkUrl: string | undefined;
           if (parsed.type === 'url') {
             try {
               const resource = await clientToUse.resolveUrl(parsed.url);
@@ -192,6 +193,7 @@ export function createReviewCommand(
               }
               trackId = String(resource.id);
               resolvedTitle = resource.title;
+              resolvedPermalinkUrl = resource.permalink_url;
             } catch (error) {
               const msg = error instanceof Error ? error.message : String(error);
               console.log(chalk.red(`  Could not resolve URL: ${msg}`));
@@ -201,7 +203,7 @@ export function createReviewCommand(
             trackId = parsed.id;
           }
 
-          await resolveTrack(db, batchManager, soundcloudPlaylistId, track.id, trackId, track.discogsReleaseId, track.discogsTrackTitle, String(soundcloudPlaylistId));
+          await resolveTrack(db, batchManager, soundcloudPlaylistId, track.id, trackId, track.discogsReleaseId, track.discogsTrackTitle, String(soundcloudPlaylistId), resolvedPermalinkUrl);
           resolved++;
           answered = true;
           const displayName = resolvedTitle ? `"${resolvedTitle}" (${trackId})` : `track ID ${trackId}`;
@@ -438,7 +440,8 @@ export async function resolveTrack(
   soundcloudTrackId: string,
   discogsReleaseId: number,
   discogsTrackTitle: string,
-  playlistDbId: string
+  playlistDbId: string,
+  permalinkUrl?: string
 ): Promise<void> {
   try {
     // Fetch existing playlist tracks from DB so the PUT doesn't wipe them.
@@ -458,7 +461,8 @@ export async function resolveTrack(
       soundcloudTrackId,
       1.0,  // manually resolved = full confidence
       discogsTrackTitle,
-      undefined
+      undefined,
+      permalinkUrl
     );
 
     // Save to playlist_releases

@@ -450,7 +450,7 @@ export class SoundCloudAPIClient {
     }
   }
 
-  async resolveUrl(url: string): Promise<{ id: number; title: string; kind: string }> {
+  async resolveUrl(url: string): Promise<{ id: number; title: string; kind: string; permalink_url?: string }> {
     try {
       if (!url || typeof url !== 'string') {
         throw new Error('Invalid URL: must be a non-empty string');

@@ -248,7 +248,8 @@ export class TrackSearchService {
                         trackId,
                         bestMatch.confidence,
                         m.soundcloudTrack.title,
-                        m.soundcloudTrack.user?.username
+                        m.soundcloudTrack.user?.username,
+                        (m.soundcloudTrack as any).permalink_url || undefined
                     );
                 } catch (error) {
                     Logger.debug(`Failed to cache playlist match for "${m.discogsTrack.title}": ${error}`);
@@ -387,7 +388,8 @@ export class TrackSearchService {
                                 result.trackId,
                                 result.confidence,
                                 result.matchedTitle,
-                                bestMatch.candidate.user?.username
+                                bestMatch.candidate.user?.username,
+                                (bestMatch.candidate as any).permalink_url || undefined
                             );
                         } catch (error) {
                             Logger.debug(`Failed to cache match for "${track.title}": ${error}`);
