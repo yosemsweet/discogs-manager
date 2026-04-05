@@ -1,0 +1,9 @@
+# Systems Index
+
+| System | Location | Purpose |
+|--------|----------|---------|
+| [Collection Sync](collection-sync/documentation.md) | `src/services/collection.ts`, `src/commands/sync.ts` | Fetches the user's Discogs vinyl collection and stores it in SQLite |
+| [Playlist Management](playlist-management/documentation.md) | `src/services/playlist*.ts`, `src/commands/playlist.ts`, `src/commands/review.ts` | Creates, updates, and deletes SoundCloud playlists from filtered Discogs releases |
+| [Track Matching](track-matching/documentation.md) | `src/services/track-matcher.ts`, `src/services/track-search.ts`, `src/utils/query-normalizer.ts` | Resolves Discogs track titles to SoundCloud track IDs using fuzzy matching |
+| [SoundCloud OAuth](soundcloud-oauth/documentation.md) | `src/services/soundcloud-oauth.ts`, `src/commands/auth.ts` | OAuth 2.1 with PKCE authentication flow and encrypted token storage |
+| [Resilience](resilience/documentation.md) | `src/services/circuit-breaker.ts`, `src/services/sync-checkpoint.ts`, `src/services/timeout-handler.ts` | Circuit breaker, sync checkpoints, and timeout handling for fault tolerance |

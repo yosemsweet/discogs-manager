@@ -2,6 +2,25 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Session Start Checklist
+
+At the start of every session, read:
+1. **`adr/index.md`** — index of all architectural decisions; keep these in mind for all changes
+2. **`development-docs/systems/index.md`** — index of all systems; use this to locate relevant code before making changes
+
+Whenever a new architectural decision is made during a session, encode it in a new ADR under `adr/` and add it to `adr/index.md`.
+
+## Documentation Maintenance
+
+**No code change is complete without also updating documentation.**
+
+After any code change:
+- If a system's behavior changed: update the relevant `development-docs/systems/<system>/documentation.md`
+- If an architectural decision was made or changed: create or update the relevant `adr/` file
+- If a feature request was completed: move it to `feature-requests/complete/` with the next sequential number (e.g. `0005-my-feature.md`)
+
+Do not create documentation or work files outside `adr/`, `development-docs/`, or `feature-requests/`.
+
 ## Project Overview
 
 Discogs Manager is a TypeScript CLI tool that syncs a user's Discogs vinyl collection to a local SQLite database and creates SoundCloud playlists from filtered subsets. It uses Commander.js for CLI parsing and better-sqlite3 for persistence.
@@ -28,7 +47,7 @@ npm run dev -- retry         # Process failed-release retry queue
 
 ## Architecture
 
-Layered architecture with dependency injection — clients and database are constructed in `src/index.ts` and passed down through constructors:
+Layered architecture with dependency injection — clients and database are constructed in `src/index.ts` and passed down through constructors. See [ADR-0001](adr/ADR-0001-layered-architecture.md).
 
 ```
 index.ts (bootstrap, wiring)

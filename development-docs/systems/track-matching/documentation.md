@@ -1,6 +1,8 @@
 # Track Matching System
 
-How Discogs tracks are resolved to SoundCloud track IDs when building playlists.
+**ADR:** [ADR-0003](../../../adr/ADR-0003-track-matching-strategy.md)
+
+Resolves Discogs track titles to SoundCloud track IDs when building playlists.
 
 ---
 
@@ -25,7 +27,8 @@ PlaylistService
 Skips per-track searching by finding the whole release as a SoundCloud playlist first.
 
 - Searches `"{artist} {release}"` via `SoundCloudAPIClient.searchPlaylists()`
-- Scores playlist candidates by title similarity + artist match (username, URL slug)
+- Scores playlist candidates: title 65%, artist 35%; hard reject only when titleScore < 0.3
+- Confidence threshold: ≥ 0.5 to accept
 - On a confident match, fetches all playlist tracks and maps them to the Discogs tracklist
 - Unmatched tracks fall through to per-track search; singles always skip this step
 - On a full hit: 2 API calls instead of N × strategies
@@ -48,6 +51,7 @@ Queries use `QueryNormalizer.normalizeForSearch()` which strips all parenthetica
 **Artist gate (two-pass):** `TrackMatcher.filterByArtistGate()` pre-filters candidates to those with artist similarity ≥ 0.3. Checks: display username, URL slug (e.g. `the-notwist` from the permalink), and embedded artist in "Artist - Title" SC title format. Falls back to ungated ranking if no candidates pass.
 
 **Scoring:** `TrackMatcher.scoreMatch()` — weighted sum of three signals:
+
 | Signal | Weight | Notes |
 |--------|--------|-------|
 | Title | 0.45 | Uses `normalizeTrackTitle()` which preserves remix/edit qualifiers |
@@ -63,7 +67,7 @@ Confidence threshold: **0.6**. Below this, the track is unmatched and saved to `
 ### [4] Cache
 **Files:** `src/services/track-search.ts` · `src/services/database.ts`
 
-Reads from `track_match_cache` before any API call. Writes on every successful match (both per-track and playlist preflight). Cache key: `(releaseId, trackTitle)`.
+Reads from `track_matches` table before any API call. Writes on every successful match (both per-track and playlist preflight). Cache key: `(releaseId, trackTitle)`.
 
 ---
 
@@ -75,10 +79,10 @@ Discogs has three patterns; the effective artist for all matching is `track.arti
 - **Track-level** (10%, compilations): each track has its own artist
 - **Mixed** (<1%): some tracks have artists, some don't
 
-Playlist preflight always uses `release.artists` for the search query (to find the compilation/album playlist). Per-track fallback uses the effective artist per track.
+Playlist preflight always uses `release.artists` for the search query. Per-track fallback uses the effective artist per track.
 
 ---
 
 ## Unmatched Tracks
 
-Tracks that exhaust all strategies without a confident match are saved to `unmatched_tracks` via `db.saveUnmatchedTrack()` with the top-3 near-miss candidates (scored ≥ 0.3) for manual review.
+Tracks that exhaust all strategies without a confident match are saved to `unmatched_tracks` via `db.saveUnmatchedTrack()` with the top-3 near-miss candidates (scored ≥ 0.3) for manual review via the `playlist review` command.
