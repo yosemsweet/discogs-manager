@@ -5,7 +5,7 @@ import { StoredRelease } from '../types';
 import { ProgressCallback, noopProgress } from '../utils/progress';
 import { QueryNormalizer } from '../utils/query-normalizer';
 import { Logger } from '../utils/logger';
-import { TrackMatcher, MatchCandidate } from './track-matcher';
+import { TrackMatcher, MatchCandidate, DiscogsTrackInfo } from './track-matcher';
 
 /**
  * Handles searching for tracks on SoundCloud given Discogs releases
@@ -74,8 +74,34 @@ export class TrackSearchService {
             }
 
             if (tracks && tracks.length > 0) {
+                // Determine which tracks need per-track search
+                let tracksToSearch = tracks;
+
+                // Try playlist preflight for multi-track releases
+                if (tracks.length > 1) {
+                    Logger.debug(`Trying playlist preflight for "${release.title}" (${tracks.length} tracks)`);
+                    const preflightResult = await this.searchReleaseAsPlaylist(release, tracks);
+                    if (preflightResult) {
+                        // Add matched tracks from playlist
+                        for (const m of preflightResult.matched) {
+                            trackData.push(m);
+                            totalMatched++;
+                        }
+                        totalSearched += tracks.length - preflightResult.unmatchedTracks.length;
+
+                        // Only search for unmatched tracks individually
+                        tracksToSearch = preflightResult.unmatchedTracks;
+
+                        if (tracksToSearch.length === 0) {
+                            // All tracks resolved via playlist — skip per-track search
+                            processedCount++;
+                            continue;
+                        }
+                    }
+                }
+
                 // Search for each individual track on SoundCloud
-                for (const track of tracks) {
+                for (const track of tracksToSearch) {
                     totalSearched++;
 
                     if (this.rateLimitService) {
@@ -116,6 +142,136 @@ export class TrackSearchService {
     }
 
     /**
+     * Attempt to resolve all tracks for a release by finding a matching SoundCloud playlist.
+     *
+     * Returns matched tracks and any unmatched tracks that need per-track fallback.
+     * Returns null if no confident playlist match is found.
+     */
+    async searchReleaseAsPlaylist(
+        release: StoredRelease,
+        tracks: any[]
+    ): Promise<{
+        matched: Array<{ trackId: string; discogsId: number }>;
+        unmatchedTracks: any[];
+    } | null> {
+        try {
+            // Build the playlist search query: "Artist ReleaseTitle"
+            // Prefer the release-level artist (always populated) over per-track artists (often empty)
+            const artistName = release.artists || tracks[0]?.artists || '';
+            const query = `${artistName} ${release.title}`.trim();
+
+            if (this.rateLimitService) {
+                await this.soundcloudClient.throttleIfApproachingLimit(this.rateLimitService);
+            }
+
+            Logger.debug(`Playlist search query: "${query}"`);
+            const playlists = await this.soundcloudClient.searchPlaylists(query, 5);
+
+            if (!playlists || playlists.length === 0) {
+                Logger.debug(`Playlist preflight: no results for "${query}"`);
+                return null;
+            }
+
+            Logger.debug(`Playlist preflight: ${playlists.length} result(s) for "${query}"`);
+
+            // Score playlists and find best match
+            for (const p of playlists) {
+                const score = TrackMatcher.scorePlaylistMatch(release.title, artistName, p);
+                Logger.debug(
+                    `  Playlist candidate: "${p.title}" by ${p.user?.username} → score ${score.toFixed(3)}` +
+                    (p.permalink_url ? ` (${p.permalink_url})` : '')
+                );
+            }
+
+            const bestMatch = TrackMatcher.findBestPlaylistMatch(
+                release.title,
+                artistName,
+                playlists
+            );
+
+            if (!bestMatch) {
+                Logger.debug(`Playlist preflight: no candidate above threshold (${TrackMatcher.getConfidenceThreshold()})`);
+                return null;
+            }
+
+            Logger.debug(
+                `Playlist preflight: selected "${bestMatch.playlist.title}" by ${bestMatch.playlist.user?.username} ` +
+                `(confidence: ${bestMatch.confidence.toFixed(3)})`
+            );
+
+            // Fetch tracks from the matched playlist
+            if (this.rateLimitService) {
+                await this.soundcloudClient.throttleIfApproachingLimit(this.rateLimitService);
+            }
+
+            const playlistTracks = await this.soundcloudClient.getPlaylistTracks(
+                bestMatch.playlist.id.toString()
+            );
+
+            if (!playlistTracks || playlistTracks.length === 0) {
+                Logger.debug(`Playlist preflight: "${bestMatch.playlist.title}" returned 0 tracks`);
+                return null;
+            }
+
+            Logger.debug(`Playlist preflight: fetched ${playlistTracks.length} track(s) from playlist`);
+            for (const pt of playlistTracks) {
+                Logger.debug(`  SC track: "${pt.title}" by ${pt.user?.username} (id: ${pt.id})`);
+            }
+
+            // Map playlist tracks to Discogs tracks.
+            // position = array index (0-based), used below to recover the original track
+            // object from the `tracks` array when building unmatchedTracks.
+            const discogsTrackInfos: DiscogsTrackInfo[] = tracks.map((t: any, i: number) => ({
+                title: t.title,
+                artists: t.artists || '',
+                duration: t.duration || null,
+                position: i,
+            }));
+
+            const mapping = TrackMatcher.mapPlaylistTracksToRelease(
+                playlistTracks as MatchCandidate[],
+                discogsTrackInfos
+            );
+
+            const matched = mapping.matched.map(m => ({
+                trackId: (m.soundcloudTrack.id || (m.soundcloudTrack as any).track_id).toString(),
+                discogsId: release.discogsId,
+            }));
+
+            // Cache matched tracks so future runs don't re-search
+            for (const m of mapping.matched) {
+                const trackId = (m.soundcloudTrack.id || (m.soundcloudTrack as any).track_id).toString();
+                try {
+                    await this.db.saveCachedTrackMatch(
+                        release.discogsId,
+                        m.discogsTrack.title,
+                        trackId,
+                        bestMatch.confidence,
+                        m.soundcloudTrack.title,
+                        m.soundcloudTrack.user?.username
+                    );
+                } catch (error) {
+                    Logger.debug(`Failed to cache playlist match for "${m.discogsTrack.title}": ${error}`);
+                }
+            }
+
+            // Find the original track objects for unmatched tracks
+            const unmatchedTracks = mapping.unmatched.map(um => {
+                return tracks[um.position];
+            });
+
+            Logger.info(
+                `Playlist preflight for "${release.title}": ${matched.length}/${tracks.length} tracks resolved`
+            );
+
+            return { matched, unmatchedTracks };
+        } catch (error) {
+            Logger.warn(`Playlist preflight failed for "${release.title}": ${error}`);
+            return null;
+        }
+    }
+
+    /**
      * Search for a track using multiple fallback strategies with caching
      *
      * First checks cache, then tries queries in this order:
@@ -135,13 +291,17 @@ export class TrackSearchService {
         release: StoredRelease,
         playlistTitle?: string
     ): Promise<{ trackId: string; matchedTitle: string; confidence: number } | null> {
+        // Use track-level artist if available, otherwise fall back to release-level artist
+        const effectiveArtist = track.artists || release.artists || '';
+        Logger.debug(`Per-track search: "${track.title}" by ${effectiveArtist || '(unknown)'} from "${release.title}"`);
+
         // Check cache first
         try {
             const cachedMatch = await this.db.getCachedTrackMatch(release.discogsId, track.title);
             if (cachedMatch) {
                 Logger.debug(
-                    `Cache hit: "${track.title}" → "${cachedMatch.matchedTitle}" ` +
-                    `(confidence: ${cachedMatch.confidence.toFixed(2)})`
+                    `  Cache hit: "${track.title}" → "${cachedMatch.matchedTitle}" ` +
+                    `(id: ${cachedMatch.soundcloudTrackId}, confidence: ${cachedMatch.confidence.toFixed(2)})`
                 );
                 return {
                     trackId: cachedMatch.soundcloudTrackId,
@@ -149,15 +309,16 @@ export class TrackSearchService {
                     confidence: cachedMatch.confidence,
                 };
             }
+            Logger.debug(`  No cache entry for "${track.title}"`);
         } catch (error) {
-            Logger.debug(`Cache lookup failed for "${track.title}": ${error}`);
+            Logger.debug(`  Cache lookup failed for "${track.title}": ${error}`);
             // Continue with search
         }
 
         // Generate multiple query strategies
         const strategies = QueryNormalizer.buildQueryStrategies(
             track.title,
-            track.artists || '',
+            effectiveArtist,
             release.title
         );
 
@@ -179,20 +340,37 @@ export class TrackSearchService {
                 );
                 const searchResults = Array.isArray(response) ? response : (response?.collection || []);
 
+                Logger.debug(`  Strategy ${i + 1}/${strategies.length}: "${query}" → ${searchResults?.length ?? 0} result(s)`);
+
                 if (searchResults && searchResults.length > 0) {
                     lastSearchResults = searchResults as MatchCandidate[];
 
                     // Use advanced fuzzy matching
                     const bestMatch = TrackMatcher.findBestMatch(
                         track.title,
-                        track.artists || '',
+                        effectiveArtist,
                         track.duration || null,
                         lastSearchResults
                     );
 
+                    // Log top candidates for visibility
+                    const allScored = TrackMatcher.findAllMatches(
+                        track.title, effectiveArtist, track.duration || null,
+                        lastSearchResults, 0.0
+                    );
+                    for (const scored of allScored.slice(0, 3)) {
+                        const bd = scored.breakdown;
+                        Logger.debug(
+                            `    "${scored.candidate.title}" by ${scored.candidate.user?.username} → ` +
+                            `${(scored.confidence * 100).toFixed(0)}% ` +
+                            `(title:${(bd.titleScore * 100).toFixed(0)}% artist:${(bd.artistScore * 100).toFixed(0)}% dur:${(bd.durationScore * 100).toFixed(0)}%)`
+                        );
+                    }
+
                     if (bestMatch) {
                         Logger.debug(
-                            `Match found using strategy ${i + 1}/${strategies.length}: "${query}"`
+                            `  ✓ Match found via strategy ${i + 1}: "${bestMatch.candidate.title}" by ${bestMatch.candidate.user?.username} ` +
+                            `(${(bestMatch.confidence * 100).toFixed(0)}%)`
                         );
 
                         const result = {
@@ -227,7 +405,7 @@ export class TrackSearchService {
 
         // All strategies exhausted — collect near-miss candidates for manual review
         Logger.debug(
-            `No match found after trying ${strategies.length} query strategies for "${track.title}"`
+            `  ✗ No match for "${track.title}" after ${strategies.length} strategies`
         );
 
         if (playlistTitle) {
@@ -235,7 +413,7 @@ export class TrackSearchService {
                 // Find near-miss candidates (lower threshold 0.3 to surface anything useful)
                 const nearMisses = TrackMatcher.findAllMatches(
                     track.title,
-                    track.artists || '',
+                    effectiveArtist,
                     track.duration || null,
                     lastSearchResults,
                     0.3
@@ -256,7 +434,7 @@ export class TrackSearchService {
                     playlistTitle,
                     discogsReleaseId: release.discogsId,
                     discogsTrackTitle: track.title,
-                    discogsArtist: track.artists || null,
+                    discogsArtist: effectiveArtist || null,
                     discogsDuration: track.duration || null,
                     releaseTitle: release.title,
                     topCandidatesJson,

@@ -13,10 +13,16 @@ describe('QueryNormalizer', () => {
       expect(QueryNormalizer.normalizeTrackTitle('Song Name (2015 Remaster)')).toBe('Song Name');
     });
 
-    it('should remove remix parentheticals', () => {
-      expect(QueryNormalizer.normalizeTrackTitle('Song Name (Remix)')).toBe('Song Name');
-      expect(QueryNormalizer.normalizeTrackTitle('Song Name (DJ Remix)')).toBe('Song Name');
+    it('should preserve musical remix/edit qualifiers in parentheses', () => {
+      expect(QueryNormalizer.normalizeTrackTitle('Song Name (Remix)')).toBe('Song Name Remix');
+      expect(QueryNormalizer.normalizeTrackTitle('Song Name (DJ Remix)')).toBe('Song Name DJ Remix');
+      expect(QueryNormalizer.normalizeTrackTitle('Run Run Run (Ada remix)')).toBe('Run Run Run Ada remix');
+      expect(QueryNormalizer.normalizeTrackTitle('Song (Special Edit)')).toBe('Song Special Edit');
+    });
+
+    it('should strip radio edit (non-musical qualifier)', () => {
       expect(QueryNormalizer.normalizeTrackTitle('Song Name (Radio Edit)')).toBe('Song Name');
+      expect(QueryNormalizer.normalizeTrackTitle('Song Name (Radio Mix)')).toBe('Song Name');
     });
 
     it('should remove featuring from title', () => {
@@ -25,7 +31,7 @@ describe('QueryNormalizer', () => {
       expect(QueryNormalizer.normalizeTrackTitle('Song featuring Artist')).toBe('Song');
     });
 
-    it('should remove version/edit parentheticals', () => {
+    it('should remove non-musical version/edit parentheticals', () => {
       expect(QueryNormalizer.normalizeTrackTitle('Song (Album Version)')).toBe('Song');
       expect(QueryNormalizer.normalizeTrackTitle('Song (Radio Edit)')).toBe('Song');
       expect(QueryNormalizer.normalizeTrackTitle('Song (Clean Version)')).toBe('Song');

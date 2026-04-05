@@ -301,6 +301,73 @@ export class DatabaseManager {
     });
   }
 
+  /**
+   * Delete a playlist and all associated data from the local database.
+   * Removes: playlist_releases, track_matches for associated releases,
+   * unmatched_tracks, and the playlist record itself.
+   * Returns counts of deleted rows for each table.
+   */
+  deletePlaylistData(title: string): Promise<{
+    playlistDeleted: boolean;
+    releaseMappings: number;
+    trackMatches: number;
+    unmatchedTracks: number;
+  }> {
+    return Promise.resolve().then(() => {
+      const tx = this.db.transaction(() => {
+        const playlist = this.db.prepare(
+          `SELECT id FROM playlists WHERE title = ? ORDER BY updatedAt DESC LIMIT 1`
+        ).get(title) as any;
+
+        if (!playlist) {
+          return { playlistDeleted: false, releaseMappings: 0, trackMatches: 0, unmatchedTracks: 0 };
+        }
+
+        const playlistId = playlist.id;
+        // Get release IDs associated with this playlist for track_matches cleanup
+        const releaseIds = (this.db.prepare(
+          `SELECT DISTINCT releaseId FROM playlist_releases WHERE playlistId = ?`
+        ).all(playlistId) as Array<{ releaseId: number }>).map(r => r.releaseId);
+
+        // Delete playlist_releases
+        const relResult = this.db.prepare(
+          `DELETE FROM playlist_releases WHERE playlistId = ?`
+        ).run(playlistId);
+
+        // Delete track_matches only for releases that are not in any other playlist.
+        // A release shared across playlists retains its cached matches.
+        let trackMatchCount = 0;
+        if (releaseIds.length > 0) {
+          const placeholders = releaseIds.map(() => '?').join(',');
+          trackMatchCount = this.db.prepare(
+            `DELETE FROM track_matches
+             WHERE discogsReleaseId IN (${placeholders})
+               AND discogsReleaseId NOT IN (
+                 SELECT releaseId FROM playlist_releases WHERE playlistId != ?
+               )`
+          ).run(...releaseIds, playlistId).changes;
+        }
+
+        // Delete unmatched_tracks for this playlist
+        const unmatchedResult = this.db.prepare(
+          `DELETE FROM unmatched_tracks WHERE playlistTitle = ?`
+        ).run(title);
+
+        // Delete the playlist record
+        this.db.prepare(`DELETE FROM playlists WHERE id = ?`).run(playlistId);
+
+        return {
+          playlistDeleted: true,
+          releaseMappings: relResult.changes,
+          trackMatches: trackMatchCount,
+          unmatchedTracks: unmatchedResult.changes,
+        };
+      });
+
+      return tx();
+    });
+  }
+
   getPlaylistTracks(playlistId: string): Promise<Array<{ soundcloudTrackId: string; releaseId: number }>> {
     return Promise.resolve().then(() => {
       const stmt = this.db.prepare(

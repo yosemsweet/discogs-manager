@@ -277,6 +277,18 @@ export class SoundCloudAPIClient {
     }
   }
 
+  async deletePlaylist(playlistId: string): Promise<void> {
+    try {
+      if (!playlistId || typeof playlistId !== 'string') {
+        throw new Error('Invalid playlist ID: must be a non-empty string');
+      }
+
+      await this.client.delete(`/playlists/${playlistId}`);
+    } catch (error) {
+      this.handleError(error, `deletePlaylist(${playlistId})`);
+    }
+  }
+
   async addTrackToPlaylist(playlistId: string, trackId: string) {
     try {
       if (!playlistId || typeof playlistId !== 'string') {
@@ -329,6 +341,30 @@ export class SoundCloudAPIClient {
       return response.data;
     } catch (error) {
       this.handleError(error, `addTracksToPlaylist(${playlistId}, ${trackIds.length} tracks)`);
+    }
+  }
+
+  async searchPlaylists(query: string, limit: number = 10) {
+    try {
+      if (typeof query !== 'string') {
+        throw new Error('Invalid query: must be a string');
+      }
+
+      if (!Number.isInteger(limit) || limit <= 0 || limit > 200) {
+        throw new Error('Invalid limit: must be an integer between 1 and 200');
+      }
+
+      const response = await this.client.get('/playlists', {
+        params: {
+          q: query,
+          limit,
+        },
+      });
+
+      const data = response.data;
+      return Array.isArray(data) ? data : (data?.collection || []);
+    } catch (error) {
+      this.handleError(error, `searchPlaylists(${query})`);
     }
   }
 

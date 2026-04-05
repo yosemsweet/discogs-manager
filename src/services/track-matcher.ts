@@ -19,6 +19,32 @@ export interface MatchCandidate {
   title: string;
   user?: { username: string };
   duration?: number; // Duration in milliseconds
+  permalink_url?: string;
+}
+
+export interface PlaylistCandidate {
+  id: string;
+  title: string;
+  user?: { username: string };
+  permalink_url?: string;
+  track_count?: number;
+}
+
+export interface PlaylistMatchResult {
+  playlist: PlaylistCandidate;
+  confidence: number;
+}
+
+export interface PlaylistTrackMapping {
+  matched: Array<{ discogsTrack: DiscogsTrackInfo; soundcloudTrack: MatchCandidate }>;
+  unmatched: DiscogsTrackInfo[];
+}
+
+export interface DiscogsTrackInfo {
+  title: string;
+  artists: string;
+  duration: string | null;
+  position: number;
 }
 
 export interface MatchScoreBreakdown {
@@ -43,9 +69,9 @@ export interface MatchResult {
 export class TrackMatcher {
   // Configurable thresholds (non-readonly so setConfidenceThreshold works without casting)
   private static CONFIDENCE_THRESHOLD = 0.6;
-  // Title is the strongest signal; artist (user.username = uploader handle) is weaker
-  private static readonly TITLE_WEIGHT = 0.6;
-  private static readonly ARTIST_WEIGHT = 0.2;
+  // Rebalanced: artist is a stronger signal than originally thought (URL slug helps)
+  private static readonly TITLE_WEIGHT = 0.45;
+  private static readonly ARTIST_WEIGHT = 0.35;
   private static readonly DURATION_WEIGHT = 0.2;
 
   /**
@@ -221,9 +247,30 @@ export class TrackMatcher {
 
     // Normalize both sides before comparison so "(Remastered)" etc. don't deflate scores
     const normExpectedTitle = QueryNormalizer.normalizeTrackTitle(expectedTitle);
-    const normCandidateTitle = candidate.title
+    let normCandidateTitle = candidate.title
       ? QueryNormalizer.normalizeTrackTitle(candidate.title)
       : '';
+
+    // Handle "Artist - Title" format common on SoundCloud (e.g. "The Notwist - blank air").
+    // Operate on the raw candidate title so the detection is consistent with filterByArtistGate.
+    // If stripping the prefix yields a better title similarity, use the stripped form for scoring.
+    const rawEmbeddedArtist = this.extractEmbeddedArtist(candidate.title || '');
+    let candidateEmbeddedArtist: string | null = null;
+    if (rawEmbeddedArtist) {
+      // Suffix starts after "<prefix> - " (prefix.length + 3 chars for " - ")
+      const rawSuffix = (candidate.title || '').substring(rawEmbeddedArtist.length + 3).trim();
+      const normSuffix = rawSuffix ? QueryNormalizer.normalizeTrackTitle(rawSuffix) : '';
+
+      if (normSuffix) {
+        const simWithPrefix = this.calculateStringSimilarity(normExpectedTitle, normCandidateTitle);
+        const simWithoutPrefix = this.calculateStringSimilarity(normExpectedTitle, normSuffix);
+
+        if (simWithoutPrefix > simWithPrefix) {
+          normCandidateTitle = normSuffix;
+          candidateEmbeddedArtist = rawEmbeddedArtist;
+        }
+      }
+    }
 
     // 1. Title similarity (strongest signal)
     if (normExpectedTitle && normCandidateTitle) {
@@ -232,11 +279,25 @@ export class TrackMatcher {
       totalWeight += this.TITLE_WEIGHT;
     }
 
-    // 2. Artist similarity (weaker signal: user.username is the uploader handle)
-    if (expectedArtist && candidate.user?.username) {
+    // 2. Artist similarity (uses username, URL slug, AND embedded artist in title)
+    if (expectedArtist && (candidate.user?.username || candidateEmbeddedArtist)) {
       const normExpectedArtist = QueryNormalizer.normalizeArtistName(expectedArtist);
-      const normCandidateUser = QueryNormalizer.normalizeArtistName(candidate.user.username);
-      artistScore = this.calculateStringSimilarity(normExpectedArtist, normCandidateUser);
+
+      if (candidate.user?.username) {
+        const normCandidateUser = QueryNormalizer.normalizeArtistName(candidate.user.username);
+        artistScore = this.calculateStringSimilarity(normExpectedArtist, normCandidateUser);
+      }
+
+      // Also check URL slug for artist match (slug is often closer to artist name than display name)
+      artistScore = Math.max(artistScore, this.scoreArtistFromUrl(normExpectedArtist, candidate.permalink_url));
+
+      // Also check the embedded artist from "Artist - Title" format
+      if (candidateEmbeddedArtist) {
+        const normEmbeddedArtist = QueryNormalizer.normalizeArtistName(candidateEmbeddedArtist);
+        const embeddedScore = this.calculateStringSimilarity(normExpectedArtist, normEmbeddedArtist);
+        artistScore = Math.max(artistScore, embeddedScore);
+      }
+
       score += artistScore * this.ARTIST_WEIGHT;
       totalWeight += this.ARTIST_WEIGHT;
     }
@@ -275,8 +336,60 @@ export class TrackMatcher {
     return { confidence, breakdown };
   }
 
+  // Minimum artist similarity to pass the artist gate (Approach 3)
+  private static readonly ARTIST_GATE_THRESHOLD = 0.3;
+
   /**
-   * Find the best matching candidate from a list of search results
+   * Filter candidates by artist similarity gate.
+   * Returns only candidates whose artist score (username or URL slug) meets the threshold.
+   *
+   * @param expectedArtist - Expected artist name
+   * @param candidates - List of candidate tracks
+   * @returns Candidates that pass the artist gate
+   */
+  static filterByArtistGate(
+    expectedArtist: string,
+    candidates: MatchCandidate[]
+  ): MatchCandidate[] {
+    if (!expectedArtist || candidates.length === 0) {
+      return candidates;
+    }
+
+    const normExpectedArtist = QueryNormalizer.normalizeArtistName(expectedArtist);
+    if (!normExpectedArtist) return candidates;
+
+    return candidates.filter(candidate => {
+      let artistSim = 0;
+
+      if (candidate.user?.username) {
+        const normCandidateUser = QueryNormalizer.normalizeArtistName(candidate.user.username);
+        artistSim = this.calculateStringSimilarity(normExpectedArtist, normCandidateUser);
+        if (artistSim >= 1.0) return true;
+      }
+
+      // Also check URL slug
+      artistSim = Math.max(artistSim, this.scoreArtistFromUrl(normExpectedArtist, candidate.permalink_url));
+      if (artistSim >= 1.0) return true;
+
+      // Also check "Artist - Title" embedded artist in the candidate title
+      const embeddedArtist = this.extractEmbeddedArtist(candidate.title || '');
+      if (embeddedArtist) {
+        const normPrefix = QueryNormalizer.normalizeArtistName(embeddedArtist);
+        const prefixSim = this.calculateStringSimilarity(normExpectedArtist, normPrefix);
+        artistSim = Math.max(artistSim, prefixSim);
+      }
+
+      return artistSim >= this.ARTIST_GATE_THRESHOLD;
+    });
+  }
+
+  /**
+   * Find the best matching candidate from a list of search results.
+   *
+   * Uses two-pass artist-gated filtering (Approach 3):
+   * 1. Filter candidates to those passing artist similarity gate
+   * 2. Rank filtered candidates by full score (title + artist + duration)
+   * 3. If no candidates pass the gate, fall back to ungated ranking
    *
    * @param expectedTitle - Expected track title
    * @param expectedArtist - Expected artist name
@@ -294,11 +407,15 @@ export class TrackMatcher {
       return null;
     }
 
+    // Two-pass: try artist-gated first, fall back to ungated
+    const gatedCandidates = this.filterByArtistGate(expectedArtist, candidates);
+    const candidatesToScore = gatedCandidates.length > 0 ? gatedCandidates : candidates;
+
     let bestCandidate: MatchCandidate | null = null;
     let bestScore = 0;
     let bestBreakdown: MatchScoreBreakdown | null = null;
 
-    for (const candidate of candidates) {
+    for (const candidate of candidatesToScore) {
       const { confidence, breakdown } = this.scoreMatch(
         expectedTitle,
         expectedArtist,
@@ -381,5 +498,194 @@ export class TrackMatcher {
     if (threshold >= 0 && threshold <= 1) {
       this.CONFIDENCE_THRESHOLD = threshold;
     }
+  }
+
+  // ── Playlist preflight methods (Approach 4) ──────────────────────────
+
+  private static readonly PLAYLIST_CONFIDENCE_THRESHOLD = 0.5;
+
+  /**
+   * Score a playlist candidate against an expected release.
+   *
+   * Compares playlist title to release title AND uploader to expected artist.
+   * Both dimensions must contribute for a confident match.
+   *
+   * @returns confidence 0-1
+   */
+  static scorePlaylistMatch(
+    releaseTitle: string,
+    expectedArtist: string,
+    playlist: PlaylistCandidate
+  ): number {
+    const normRelease = QueryNormalizer.normalizeTrackTitle(releaseTitle);
+    const normPlaylistTitle = playlist.title
+      ? QueryNormalizer.normalizeTrackTitle(playlist.title)
+      : '';
+
+    const titleScore = this.calculateStringSimilarity(normRelease, normPlaylistTitle);
+
+    let artistScore = 0;
+    if (expectedArtist && playlist.user?.username) {
+      const normExpectedArtist = QueryNormalizer.normalizeArtistName(expectedArtist);
+      const normUploader = QueryNormalizer.normalizeArtistName(playlist.user.username);
+      artistScore = this.calculateStringSimilarity(normExpectedArtist, normUploader);
+
+      // Also check URL slug for artist match (slug often closer to artist name)
+      artistScore = Math.max(artistScore, this.scoreArtistFromUrl(normExpectedArtist, playlist.permalink_url));
+    }
+
+    // Title must be decent — reject weak title regardless of artist
+    if (titleScore < 0.3) return titleScore * 0.5;
+
+    // Artist is a boost, not a gate. A label or fan playlist with a matching title
+    // can still be selected even if the uploader name doesn't resemble the artist.
+    // Weight: title 65%, artist 35%
+    return titleScore * 0.65 + artistScore * 0.35;
+  }
+
+  /**
+   * Extract the uploader slug from a SoundCloud permalink URL.
+   * e.g. "https://soundcloud.com/touaneofficial/sets/lesotho-ep" → "touaneofficial"
+   */
+  private static extractSlugFromUrl(url: string): string | null {
+    try {
+      const parsed = new URL(url);
+      const parts = parsed.pathname.split('/').filter(Boolean);
+      return parts.length > 0 ? parts[0] : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Score expected artist against the uploader slug from a SoundCloud URL.
+   * Normalizes slug dashes/underscores to spaces before comparing.
+   */
+  private static scoreArtistFromUrl(normExpectedArtist: string, permalinkUrl: string | undefined): number {
+    if (!permalinkUrl) return 0;
+    const slug = this.extractSlugFromUrl(permalinkUrl);
+    if (!slug) return 0;
+    return this.calculateStringSimilarity(normExpectedArtist, slug.replace(/[-_]/g, ' '));
+  }
+
+  /**
+   * Extract the artist prefix from an "Artist - Title" formatted string.
+   * Operates on the raw (un-normalized) title so both scoreMatch and filterByArtistGate
+   * see the same source data. Artist comparison is always done via normalizeArtistName().
+   *
+   * @returns The artist prefix (e.g. "The Notwist") or null if pattern not present.
+   */
+  private static extractEmbeddedArtist(rawTitle: string): string | null {
+    if (!rawTitle || !rawTitle.includes(' - ')) return null;
+    const dashIdx = rawTitle.indexOf(' - ');
+    const prefix = rawTitle.substring(0, dashIdx).trim();
+    return prefix || null;
+  }
+
+  /**
+   * Find the best matching playlist from search results.
+   *
+   * @returns The best playlist above the confidence threshold, or null
+   */
+  static findBestPlaylistMatch(
+    releaseTitle: string,
+    expectedArtist: string,
+    playlists: PlaylistCandidate[]
+  ): PlaylistMatchResult | null {
+    if (!playlists || playlists.length === 0) return null;
+
+    let best: PlaylistCandidate | null = null;
+    let bestScore = 0;
+
+    for (const playlist of playlists) {
+      const score = this.scorePlaylistMatch(releaseTitle, expectedArtist, playlist);
+      if (score > bestScore) {
+        bestScore = score;
+        best = playlist;
+      }
+    }
+
+    if (best && bestScore >= this.PLAYLIST_CONFIDENCE_THRESHOLD) {
+      return { playlist: best, confidence: bestScore };
+    }
+
+    return null;
+  }
+
+  /**
+   * Map playlist tracks to Discogs release tracks.
+   *
+   * Always uses title similarity as the primary matching strategy (NOT position/index),
+   * with duration as a secondary tiebreaker when title scores are close.
+   * Returns unmatched Discogs tracks for per-track fallback.
+   */
+  static mapPlaylistTracksToRelease(
+    playlistTracks: MatchCandidate[],
+    discogsTracks: DiscogsTrackInfo[]
+  ): PlaylistTrackMapping {
+    const matched: PlaylistTrackMapping['matched'] = [];
+    const unmatched: DiscogsTrackInfo[] = [];
+
+    if (!playlistTracks || playlistTracks.length === 0) {
+      return { matched: [], unmatched: [...discogsTracks] };
+    }
+
+    // Always use title similarity to pair tracks (never position-based)
+    const usedPlaylistIndices = new Set<number>();
+
+    for (const discogsTrack of discogsTracks) {
+      const normDiscogsTitle = QueryNormalizer.normalizeTrackTitle(discogsTrack.title);
+      let bestIdx = -1;
+      let bestSim = 0;
+      let bestDurationDiff = Infinity;
+
+      const discogsSeconds = discogsTrack.duration
+        ? this.parseDiscogsDuration(discogsTrack.duration)
+        : 0;
+
+      for (let j = 0; j < playlistTracks.length; j++) {
+        if (usedPlaylistIndices.has(j)) continue;
+
+        const normScTitle = playlistTracks[j].title
+          ? QueryNormalizer.normalizeTrackTitle(playlistTracks[j].title)
+          : '';
+        const sim = this.calculateStringSimilarity(normDiscogsTitle, normScTitle);
+
+        // Use duration as tiebreaker when title scores are close (within 0.05)
+        const scSeconds = playlistTracks[j].duration
+          ? Math.floor(playlistTracks[j].duration! / 1000)
+          : 0;
+        const durationDiff = (discogsSeconds > 0 && scSeconds > 0)
+          ? Math.abs(discogsSeconds - scSeconds)
+          : Infinity;
+
+        if (sim > bestSim + 0.05) {
+          // Clear winner by title
+          bestSim = sim;
+          bestIdx = j;
+          bestDurationDiff = durationDiff;
+        } else if (sim >= bestSim - 0.05 && sim > 0) {
+          // Title scores are close — use duration as tiebreaker
+          if (durationDiff < bestDurationDiff) {
+            bestSim = sim;
+            bestIdx = j;
+            bestDurationDiff = durationDiff;
+          }
+        }
+      }
+
+      // Require minimum similarity to accept the pairing
+      if (bestIdx >= 0 && bestSim >= 0.4) {
+        usedPlaylistIndices.add(bestIdx);
+        matched.push({
+          discogsTrack,
+          soundcloudTrack: playlistTracks[bestIdx],
+        });
+      } else {
+        unmatched.push(discogsTrack);
+      }
+    }
+
+    return { matched, unmatched };
   }
 }

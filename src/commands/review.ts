@@ -327,6 +327,109 @@ export function createResetCommand(db: DatabaseManager) {
   return cmd;
 }
 
+export function createDeleteCommand(
+  soundcloudClient: SoundCloudAPIClient | null,
+  db: DatabaseManager
+) {
+  const cmd = new Command('delete')
+    .description('Delete a playlist from SoundCloud and remove all local data (track matches, unmatched tracks)')
+    .requiredOption('-t, --title <title>', 'Playlist title to delete')
+    .option('--keep-remote', 'Keep the SoundCloud playlist, only delete local data')
+    .option('-y, --yes', 'Skip confirmation prompt');
+
+  cmd.action(async (options) => {
+    const playlistTitle: string = options.title;
+
+    const storedPlaylist = await db.getPlaylistByTitle(playlistTitle);
+    if (!storedPlaylist) {
+      console.error(chalk.red(`No playlist found with title "${playlistTitle}".`));
+      process.exit(1);
+    }
+
+    // Show what will be deleted
+    const tracks = await db.getPlaylistTracks(storedPlaylist.id);
+    const unmatchedCounts = await db.countUnmatchedTracks(playlistTitle);
+    const totalUnmatched = unmatchedCounts.pending + unmatchedCounts.resolved + unmatchedCounts.skipped;
+
+    console.log(chalk.bold(`\nPlaylist: "${playlistTitle}"`));
+    console.log(chalk.gray(`  SoundCloud ID: ${storedPlaylist.soundcloudId}`));
+    console.log(chalk.gray(`  Matched tracks: ${tracks.length}`));
+    console.log(chalk.gray(`  Unmatched tracks: ${totalUnmatched}`));
+    console.log();
+
+    if (!options.keepRemote) {
+      console.log(chalk.yellow('This will delete the playlist from SoundCloud and remove all local data.'));
+    } else {
+      console.log(chalk.yellow('This will remove all local data. The SoundCloud playlist will be kept.'));
+    }
+
+    if (!options.yes) {
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      const answer = await new Promise<string>((resolve) => {
+        rl.question(chalk.bold('\nAre you sure? (y/N) '), resolve);
+      });
+      rl.close();
+
+      if (answer.toLowerCase() !== 'y') {
+        console.log(chalk.gray('Cancelled.'));
+        process.exit(0);
+      }
+    }
+
+    // Delete from SoundCloud
+    if (!options.keepRemote) {
+      let clientToUse = soundcloudClient;
+      if (!clientToUse) {
+        try {
+          const encryptionService = new EncryptionService(process.env.ENCRYPTION_KEY);
+          const rateLimitService = new SoundCloudRateLimitService(db);
+          await rateLimitService.initializeFromDatabase();
+          const oauthService = new SoundCloudOAuthService(
+            process.env.SOUNDCLOUD_CLIENT_ID || '',
+            process.env.SOUNDCLOUD_CLIENT_SECRET || '',
+            'http://localhost:8080/callback',
+            db,
+            encryptionService
+          );
+          const token = await oauthService.getValidAccessToken();
+          clientToUse = new SoundCloudAPIClient(token, rateLimitService);
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          console.error(chalk.red(`SoundCloud authentication failed: ${msg}`));
+          console.log(chalk.yellow('Use --keep-remote to delete only local data, or run: npm run dev -- auth'));
+          process.exit(1);
+        }
+      }
+
+      try {
+        await clientToUse.deletePlaylist(storedPlaylist.soundcloudId);
+        console.log(chalk.green('Deleted playlist from SoundCloud.'));
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (msg.includes('404')) {
+          console.log(chalk.yellow('Playlist already deleted from SoundCloud (404).'));
+        } else {
+          console.error(chalk.red(`Failed to delete from SoundCloud: ${msg}`));
+          console.log(chalk.yellow('Continuing with local cleanup...'));
+        }
+      }
+    }
+
+    // Delete local data
+    const result = await db.deletePlaylistData(playlistTitle);
+
+    console.log(chalk.green(`\nLocal data removed:`));
+    console.log(chalk.gray(`  Release mappings: ${result.releaseMappings}`));
+    console.log(chalk.gray(`  Track matches:    ${result.trackMatches}`));
+    console.log(chalk.gray(`  Unmatched tracks: ${result.unmatchedTracks}`));
+    console.log(chalk.green(`\nPlaylist "${playlistTitle}" deleted. Re-run the playlist command to recreate it with fresh matching.`));
+
+    process.exit(0);
+  });
+
+  return cmd;
+}
+
 export async function resolveTrack(
   db: DatabaseManager,
   batchManager: PlaylistBatchManager,

@@ -27,15 +27,43 @@ export class QueryNormalizer {
 
     return title
       .trim()
-      // Remove common parentheticals that reduce match quality
-      .replace(/\(.*?(remaster|remix|edit|version|radio|album|single|explicit|clean).*?\)/gi, '')
-      // Remove dash-prefixed version qualifiers (e.g. "Title - Remastered 2009", "Title - Live")
-      .replace(/\s+-\s+(remaster(ed)?|remix|edit|live|version|radio|album|single|explicit|clean)(\s+\S+)*/gi, '')
+      // Remove non-musical parentheticals; strip the parens from musical ones (remix/edit/version)
+      .replace(/\(.*?(remaster(ed)?|radio\s*(edit|mix|version)|album\s*version|single\s*version|explicit|clean|deluxe|bonus).*?\)/gi, '')
+      .replace(/\(([^)]*(?:remix|edit|mix|version|dub)[^)]*)\)/gi, ' $1')
+      // Remove dash-prefixed NON-musical version qualifiers
+      .replace(/\s+-\s+(remaster(ed)?|live|radio\s*(edit|mix)|album\s*version|single\s*version|explicit|clean|deluxe|bonus)(\s+\S+)*/gi, '')
       // Remove featuring information in parentheses/brackets (we'll add artist separately)
       .replace(/[\(\[]?\s*(?:feat\.?|ft\.?|featuring)\s+[^\)\]]+[\)\]]?/gi, '')
       // Remove square brackets with content
       .replace(/\[[^\]]*\]/g, '')
       // Remove special characters that may interfere (keep apostrophes, hyphens)
+      .replace(/[^\w\s'\-]/g, ' ')
+      // Normalize whitespace
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /**
+   * Normalize track title for search queries (strips ALL parentheticals including remix/edit).
+   * Use this for building search queries where broader results are better.
+   * Use normalizeTrackTitle() for scoring where remix/edit distinction matters.
+   */
+  static normalizeForSearch(title: string): string {
+    if (!title || typeof title !== 'string') {
+      return '';
+    }
+
+    return title
+      .trim()
+      // Strip ALL parentheticals — we want broad search results
+      .replace(/\([^)]*\)/g, '')
+      // Remove dash-prefixed known qualifiers only (don't strip arbitrary content after " - ")
+      .replace(/\s+-\s+(remaster(ed)?|remix|edit|live|version|radio|album|single|explicit|clean|deluxe|bonus)(\s+\S+)*/gi, '')
+      // Remove featuring information
+      .replace(/[\(\[]?\s*(?:feat\.?|ft\.?|featuring)\s+[^\)\]]+[\)\]]?/gi, '')
+      // Remove square brackets with content
+      .replace(/\[[^\]]*\]/g, '')
+      // Remove special characters (keep apostrophes, hyphens)
       .replace(/[^\w\s'\-]/g, ' ')
       // Normalize whitespace
       .replace(/\s+/g, ' ')
@@ -140,8 +168,8 @@ export class QueryNormalizer {
   ): string {
     const parts: string[] = [];
 
-    // Add normalized track title
-    const normalizedTrack = this.normalizeTrackTitle(trackTitle);
+    // Add normalized track title (use search normalization for broader results)
+    const normalizedTrack = this.normalizeForSearch(trackTitle);
     if (normalizedTrack) {
       parts.push(normalizedTrack);
     }
@@ -154,7 +182,7 @@ export class QueryNormalizer {
 
     // Add release/album title for context (helps with disambiguation)
     if (releaseTitle) {
-      const normalizedRelease = this.normalizeTrackTitle(releaseTitle);
+      const normalizedRelease = this.normalizeForSearch(releaseTitle);
       if (normalizedRelease) {
         parts.push(normalizedRelease);
       }
@@ -193,9 +221,11 @@ export class QueryNormalizer {
   ): string[] {
     const queries: string[] = [];
 
-    const normalizedTrack = this.normalizeTrackTitle(trackTitle);
+    // Use normalizeForSearch (strips ALL parentheticals) for broader search results.
+    // Scoring will use normalizeTrackTitle (preserves remix/edit) for discrimination.
+    const normalizedTrack = this.normalizeForSearch(trackTitle);
     const primaryArtist = this.extractPrimaryArtist(artists);
-    const normalizedRelease = releaseTitle ? this.normalizeTrackTitle(releaseTitle) : '';
+    const normalizedRelease = releaseTitle ? this.normalizeForSearch(releaseTitle) : '';
 
     // Strategy 1: Full context (track + artist + album)
     if (normalizedTrack && primaryArtist && normalizedRelease) {

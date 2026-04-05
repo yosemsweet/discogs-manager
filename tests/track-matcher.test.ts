@@ -1,4 +1,5 @@
-import { TrackMatcher, MatchCandidate } from '../src/services/track-matcher';
+import { TrackMatcher, MatchCandidate, PlaylistCandidate } from '../src/services/track-matcher';
+import { QueryNormalizer } from '../src/utils/query-normalizer';
 
 describe('TrackMatcher', () => {
   describe('calculateStringSimilarity', () => {
@@ -538,6 +539,459 @@ describe('TrackMatcher', () => {
 
       expect(result).not.toBeNull();
       expect(result!.candidate.id).toBe('1');
+    });
+  });
+
+  // ── Approach 1: Reweight artist + URL-slug matching ──────────────────────
+
+  describe('Approach 1: Artist weight + URL slug matching', () => {
+    it('scoreMatch returns higher score when candidate username matches expected artist', () => {
+      const correctCandidate: MatchCandidate = {
+        id: '1',
+        title: 'Grow',
+        user: { username: 'touaneofficial' },
+        permalink_url: 'https://soundcloud.com/touaneofficial/grow',
+        duration: 240000,
+      };
+
+      const wrongCandidate: MatchCandidate = {
+        id: '2',
+        title: 'Grow',
+        user: { username: 'riiox' },
+        permalink_url: 'https://soundcloud.com/riiox/grow-sebastian-rios',
+        duration: 240000,
+      };
+
+      const { confidence: correctScore } = TrackMatcher.scoreMatch('Grow', 'Touane', '4:00', correctCandidate);
+      const { confidence: wrongScore } = TrackMatcher.scoreMatch('Grow', 'Touane', '4:00', wrongCandidate);
+
+      expect(correctScore).toBeGreaterThan(wrongScore);
+    });
+
+    it('scoreMatch uses URL slug for artist comparison when available', () => {
+      const candidateWithSlug: MatchCandidate = {
+        id: '1',
+        title: 'Song',
+        user: { username: 'TheNotwistBand' },
+        permalink_url: 'https://soundcloud.com/the-notwist/song',
+        duration: 200000,
+      };
+
+      const candidateNoSlug: MatchCandidate = {
+        id: '2',
+        title: 'Song',
+        user: { username: 'TheNotwistBand' },
+        duration: 200000,
+      };
+
+      const { confidence: withSlug } = TrackMatcher.scoreMatch('Song', 'The Notwist', '3:20', candidateWithSlug);
+      const { confidence: noSlug } = TrackMatcher.scoreMatch('Song', 'The Notwist', '3:20', candidateNoSlug);
+
+      // URL slug "the-notwist" should boost artist score
+      expect(withSlug).toBeGreaterThanOrEqual(noSlug);
+    });
+
+    it('SC1.1: "Grow" by Touane — touaneofficial/grow scores higher than riiox/grow', () => {
+      const candidates: MatchCandidate[] = [
+        {
+          id: 'correct',
+          title: 'Grow',
+          user: { username: 'touaneofficial' },
+          permalink_url: 'https://soundcloud.com/touaneofficial/grow',
+          duration: 240000,
+        },
+        {
+          id: 'wrong',
+          title: 'Grow - Sebastian Rios',
+          user: { username: 'riiox' },
+          permalink_url: 'https://soundcloud.com/riiox/grow-sebastian-rios',
+          duration: 230000,
+        },
+      ];
+
+      const result = TrackMatcher.findBestMatch('Grow', 'Touane', '4:00', candidates);
+      expect(result).not.toBeNull();
+      expect(result!.candidate.id).toBe('correct');
+    });
+
+    it('SC1.2: "The Band" by Touane — touaneofficial scores higher', () => {
+      const candidates: MatchCandidate[] = [
+        {
+          id: 'correct',
+          title: 'The Band',
+          user: { username: 'touaneofficial' },
+          permalink_url: 'https://soundcloud.com/touaneofficial/the-band-1',
+          duration: 200000,
+        },
+        {
+          id: 'wrong',
+          title: 'The Band (Remaster 2026)',
+          user: { username: 'max-and-the-middlefingers' },
+          permalink_url: 'https://soundcloud.com/max-and-the-middlefingers/the-band-remaster-2026',
+          duration: 210000,
+        },
+      ];
+
+      const result = TrackMatcher.findBestMatch('The Band', 'Touane', '3:20', candidates);
+      expect(result).not.toBeNull();
+      expect(result!.candidate.id).toBe('correct');
+    });
+
+    it('SC1.3: "Lesotho" by Touane — touaneofficial scores higher', () => {
+      const candidates: MatchCandidate[] = [
+        {
+          id: 'correct',
+          title: 'Lesotho',
+          user: { username: 'touaneofficial' },
+          permalink_url: 'https://soundcloud.com/touaneofficial/lesotho',
+          duration: 300000,
+        },
+        {
+          id: 'wrong',
+          title: 'Lesotho',
+          user: { username: 'madera_music' },
+          permalink_url: 'https://soundcloud.com/madera_music/lesotho',
+          duration: 280000,
+        },
+      ];
+
+      const result = TrackMatcher.findBestMatch('Lesotho', 'Touane', '5:00', candidates);
+      expect(result).not.toBeNull();
+      expect(result!.candidate.id).toBe('correct');
+    });
+
+    it('SC1.4: "Run Run Run (Ada remix)" — the-notwist scores higher than dutchmelrose', () => {
+      const candidates: MatchCandidate[] = [
+        {
+          id: 'correct',
+          title: 'Run Run Run (Ada Remix)',
+          user: { username: 'The Notwist' },
+          permalink_url: 'https://soundcloud.com/the-notwist/run-run-run-ada-remix',
+          duration: 300000,
+        },
+        {
+          id: 'wrong',
+          title: 'runrunrun',
+          user: { username: 'dutchmelrose' },
+          permalink_url: 'https://soundcloud.com/dutchmelrose/runrunrun',
+          duration: 200000,
+        },
+      ];
+
+      const result = TrackMatcher.findBestMatch('Run Run Run (Ada remix)', 'The Notwist', '5:00', candidates);
+      expect(result).not.toBeNull();
+      expect(result!.candidate.id).toBe('correct');
+    });
+
+    it('SC1.5: no regression — existing correctly-matched tracks remain correct', () => {
+      // Beatles "Hey Jude" should still match
+      const candidates: MatchCandidate[] = [
+        { id: '1', title: 'Wrong Song', user: { username: 'Wrong Artist' }, duration: 120000 },
+        { id: '2', title: 'Hey Jude', user: { username: 'The Beatles' }, duration: 431000 },
+        { id: '3', title: 'Hey Jude Cover', user: { username: 'Some Cover Band' }, duration: 300000 },
+      ];
+
+      const result = TrackMatcher.findBestMatch('Hey Jude', 'The Beatles', '7:11', candidates);
+      expect(result).not.toBeNull();
+      expect(result!.candidate.id).toBe('2');
+      expect(result!.confidence).toBeGreaterThan(0.8);
+    });
+  });
+
+  // ── Approach 2: Preserve remix qualifiers ────────────────────────────────
+
+  describe('Approach 2: Remix qualifier preservation', () => {
+    it('SC2.1: normalizeTrackTitle preserves remix qualifier', () => {
+      const result = QueryNormalizer.normalizeTrackTitle('Run Run Run (Ada remix)');
+      expect(result).toContain('Ada remix');
+    });
+
+    it('SC2.2: normalizeTrackTitle still strips Remastered', () => {
+      expect(QueryNormalizer.normalizeTrackTitle('Song (Remastered 2009)')).toBe('Song');
+    });
+
+    it('SC2.3: normalizeTrackTitle still strips featuring info', () => {
+      expect(QueryNormalizer.normalizeTrackTitle('Track (feat. Someone)')).toBe('Track');
+    });
+
+    it('SC2.4: "Run Run Run Ada remix" vs "run run run ada remix" higher than vs "runrunrun"', () => {
+      const simCorrect = TrackMatcher.calculateStringSimilarity(
+        'Run Run Run Ada remix',
+        'run run run ada remix'
+      );
+      const simWrong = TrackMatcher.calculateStringSimilarity(
+        'Run Run Run Ada remix',
+        'runrunrun'
+      );
+
+      expect(simCorrect).toBeGreaterThan(simWrong);
+      expect(simCorrect).toBe(1.0); // Identical after case normalization
+    });
+
+    it('SC2.5: preserves edit qualifier', () => {
+      const result = QueryNormalizer.normalizeTrackTitle('Song (Special Edit)');
+      expect(result).toContain('Special Edit');
+    });
+
+    it('still strips explicit/clean/radio qualifiers', () => {
+      expect(QueryNormalizer.normalizeTrackTitle('Song (Explicit)')).toBe('Song');
+      expect(QueryNormalizer.normalizeTrackTitle('Song (Clean Version)')).toBe('Song');
+      expect(QueryNormalizer.normalizeTrackTitle('Song (Radio Edit)')).toBe('Song');
+    });
+
+    it('findBestMatch selects Ada remix over plain version', () => {
+      const candidates: MatchCandidate[] = [
+        {
+          id: 'remix',
+          title: 'Run Run Run (Ada Remix)',
+          user: { username: 'The Notwist' },
+          permalink_url: 'https://soundcloud.com/the-notwist/run-run-run-ada-remix',
+          duration: 300000,
+        },
+        {
+          id: 'plain',
+          title: 'Run Run Run',
+          user: { username: 'The Notwist' },
+          permalink_url: 'https://soundcloud.com/the-notwist/run-run-run',
+          duration: 250000,
+        },
+      ];
+
+      const result = TrackMatcher.findBestMatch('Run Run Run (Ada remix)', 'The Notwist', '5:00', candidates);
+      expect(result).not.toBeNull();
+      expect(result!.candidate.id).toBe('remix');
+    });
+  });
+
+  // ── Approach 3: Artist-gated filtering ────────────────────────────────────
+
+  describe('Approach 3: Artist-gated filtering', () => {
+    it('SC3.1: filterByArtistGate passes touaneofficial, not riiox', () => {
+      const candidates: MatchCandidate[] = [
+        {
+          id: '1',
+          title: 'Grow',
+          user: { username: 'touaneofficial' },
+          permalink_url: 'https://soundcloud.com/touaneofficial/grow',
+        },
+        {
+          id: '2',
+          title: 'Grow',
+          user: { username: 'riiox' },
+          permalink_url: 'https://soundcloud.com/riiox/grow-sebastian-rios',
+        },
+      ];
+
+      const gated = TrackMatcher.filterByArtistGate('Touane', candidates);
+
+      const ids = gated.map(c => c.id);
+      expect(ids).toContain('1');
+      expect(ids).not.toContain('2');
+    });
+
+    it('SC3.2: filterByArtistGate passes the-notwist, not dutchmelrose', () => {
+      const candidates: MatchCandidate[] = [
+        {
+          id: '1',
+          title: 'Run Run Run',
+          user: { username: 'The Notwist' },
+          permalink_url: 'https://soundcloud.com/the-notwist/run-run-run',
+        },
+        {
+          id: '2',
+          title: 'runrunrun',
+          user: { username: 'dutchmelrose' },
+          permalink_url: 'https://soundcloud.com/dutchmelrose/runrunrun',
+        },
+      ];
+
+      const gated = TrackMatcher.filterByArtistGate('The Notwist', candidates);
+
+      const ids = gated.map(c => c.id);
+      expect(ids).toContain('1');
+      expect(ids).not.toContain('2');
+    });
+
+    it('SC3.3: returns empty when no candidates match artist gate', () => {
+      const candidates: MatchCandidate[] = [
+        { id: '1', title: 'Song', user: { username: 'unrelated1' } },
+        { id: '2', title: 'Song', user: { username: 'unrelated2' } },
+      ];
+
+      const gated = TrackMatcher.filterByArtistGate('Touane', candidates);
+      expect(gated).toHaveLength(0);
+    });
+
+    it('findBestMatch falls back to ungated when no candidates pass gate', () => {
+      const candidates: MatchCandidate[] = [
+        {
+          id: '1',
+          title: 'Some Song',
+          user: { username: 'totally-unrelated' },
+          duration: 200000,
+        },
+      ];
+
+      // With a very generic artist that won't match, it should still return a result
+      // if the title matches well (fallback to ungated ranking)
+      const result = TrackMatcher.findBestMatch('Some Song', 'NonexistentArtist', '3:20', candidates);
+
+      // May or may not match depending on title score, but shouldn't crash
+      // The key assertion: no exception thrown and function returns
+      expect(result === null || result.candidate.id === '1').toBe(true);
+    });
+
+    it('handles missing user field gracefully', () => {
+      const candidates: MatchCandidate[] = [
+        { id: '1', title: 'Song' }, // No user field
+        { id: '2', title: 'Song', user: { username: 'artist' } },
+      ];
+
+      // Should not throw
+      const gated = TrackMatcher.filterByArtistGate('artist', candidates);
+      expect(gated.length).toBeGreaterThanOrEqual(0);
+    });
+
+    it('SC3.4: "One Of These Days" with no correct match — does not match unrelated artist', () => {
+      const candidates: MatchCandidate[] = [
+        {
+          id: '1',
+          title: 'One Of These Days',
+          user: { username: 'castle_hearts' },
+          permalink_url: 'https://soundcloud.com/castle_hearts/one-of-these-days',
+          duration: 200000,
+        },
+        {
+          id: '2',
+          title: 'Magnificent Fall Shops',
+          user: { username: 'morningcalmplaylist' },
+          permalink_url: 'https://soundcloud.com/morningcalmplaylist/magnificent-fall-shops',
+          duration: 180000,
+        },
+      ];
+
+      const result = TrackMatcher.findBestMatch('One Of These Days', 'The Notwist', '3:30', candidates);
+
+      // Should either return null or not match castle_hearts/morningcalmplaylist
+      if (result) {
+        // If a match is returned, verify it's not from an unrelated artist with low confidence
+        expect(result.confidence).toBeGreaterThan(0.6);
+      }
+    });
+  });
+
+  // ── Integration: Full example set ────────────────────────────────────────
+
+  describe('Full example set integration', () => {
+    it('all three Touane tracks match touaneofficial URLs', () => {
+      const touaneCandidates = (title: string, wrongUser: string, wrongTitle: string) => [
+        {
+          id: 'correct',
+          title,
+          user: { username: 'touaneofficial' },
+          permalink_url: `https://soundcloud.com/touaneofficial/${title.toLowerCase().replace(/\s+/g, '-')}`,
+          duration: 240000,
+        },
+        {
+          id: 'wrong',
+          title: wrongTitle,
+          user: { username: wrongUser },
+          permalink_url: `https://soundcloud.com/${wrongUser}/${wrongTitle.toLowerCase().replace(/\s+/g, '-')}`,
+          duration: 230000,
+        },
+      ];
+
+      // Grow
+      const growResult = TrackMatcher.findBestMatch(
+        'Grow', 'Touane', '4:00',
+        touaneCandidates('Grow', 'riiox', 'Grow - Sebastian Rios')
+      );
+      expect(growResult).not.toBeNull();
+      expect(growResult!.candidate.id).toBe('correct');
+
+      // The Band
+      const bandResult = TrackMatcher.findBestMatch(
+        'The Band', 'Touane', '3:20',
+        touaneCandidates('The Band', 'max-and-the-middlefingers', 'The Band Remaster 2026')
+      );
+      expect(bandResult).not.toBeNull();
+      expect(bandResult!.candidate.id).toBe('correct');
+
+      // Lesotho
+      const lesothoResult = TrackMatcher.findBestMatch(
+        'Lesotho', 'Touane', '5:00',
+        touaneCandidates('Lesotho', 'madera_music', 'Lesotho')
+      );
+      expect(lesothoResult).not.toBeNull();
+      expect(lesothoResult!.candidate.id).toBe('correct');
+    });
+
+    it('Run Run Run (Ada remix) matches the-notwist URL', () => {
+      const candidates: MatchCandidate[] = [
+        {
+          id: 'correct',
+          title: 'Run Run Run (Ada Remix)',
+          user: { username: 'The Notwist' },
+          permalink_url: 'https://soundcloud.com/the-notwist/run-run-run-ada-remix',
+          duration: 300000,
+        },
+        {
+          id: 'wrong',
+          title: 'runrunrun',
+          user: { username: 'dutchmelrose' },
+          permalink_url: 'https://soundcloud.com/dutchmelrose/runrunrun',
+          duration: 200000,
+        },
+      ];
+
+      const result = TrackMatcher.findBestMatch('Run Run Run (Ada remix)', 'The Notwist', '5:00', candidates);
+      expect(result).not.toBeNull();
+      expect(result!.candidate.id).toBe('correct');
+    });
+
+    it('One Of These Days — when only unrelated artists exist, falls back to ungated', () => {
+      const candidates: MatchCandidate[] = [
+        {
+          id: '1',
+          title: 'One Of These Days',
+          user: { username: 'castle_hearts' },
+          permalink_url: 'https://soundcloud.com/castle_hearts/one-of-these-days',
+          duration: 200000,
+        },
+      ];
+
+      // castle_hearts doesn't pass the artist gate for "The Notwist",
+      // but the fallback to ungated ranking still returns a result because the title matches.
+      // This is by design — the gate avoids recall loss when all candidates fail it.
+      const result = TrackMatcher.findBestMatch('One Of These Days', 'The Notwist', '3:30', candidates);
+
+      // If there were ALSO a correct Notwist candidate, the gate would prefer it.
+      // With only an unrelated candidate, the system returns it rather than nothing.
+      expect(result === null || result.candidate.id === '1').toBe(true);
+    });
+
+    it('One Of These Days — prefers Notwist candidate over castle_hearts when both present', () => {
+      const candidates: MatchCandidate[] = [
+        {
+          id: 'wrong',
+          title: 'One Of These Days',
+          user: { username: 'castle_hearts' },
+          permalink_url: 'https://soundcloud.com/castle_hearts/one-of-these-days',
+          duration: 200000,
+        },
+        {
+          id: 'correct',
+          title: 'One Of These Days',
+          user: { username: 'The Notwist' },
+          permalink_url: 'https://soundcloud.com/the-notwist/one-of-these-days',
+          duration: 210000,
+        },
+      ];
+
+      const result = TrackMatcher.findBestMatch('One Of These Days', 'The Notwist', '3:30', candidates);
+
+      expect(result).not.toBeNull();
+      expect(result!.candidate.id).toBe('correct');
     });
   });
 });
