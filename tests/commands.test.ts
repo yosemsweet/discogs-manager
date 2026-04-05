@@ -2,11 +2,11 @@ import { createSyncCommand } from '../src/commands/sync';
 import { createListCommand } from '../src/commands/list';
 import { createStatsCommand } from '../src/commands/stats';
 import { createPlaylistCommand } from '../src/commands/playlist';
+import { createCollectionCommand } from '../src/commands/collection';
 import { DiscogsAPIClient } from '../src/api/discogs';
 import { SoundCloudAPIClient } from '../src/api/soundcloud';
 import { DatabaseManager } from '../src/services/database';
 
-// Mock chalk and ora to avoid ES module issues
 jest.mock('chalk', () => ({
   __esModule: true,
   default: {
@@ -25,10 +25,10 @@ jest.mock('ora', () => ({
     start: jest.fn().mockReturnThis(),
     succeed: jest.fn().mockReturnThis(),
     fail: jest.fn().mockReturnThis(),
+    warn: jest.fn().mockReturnThis(),
   }),
 }));
 
-// Mock the API clients and database
 jest.mock('../src/api/discogs');
 jest.mock('../src/api/soundcloud');
 jest.mock('../src/services/database');
@@ -39,7 +39,6 @@ describe('CLI Commands', () => {
   let mockDb: DatabaseManager;
 
   beforeEach(() => {
-    // Create mock instances
     mockDiscogsClient = {
       getCollection: jest.fn(),
       getRelease: jest.fn(),
@@ -74,15 +73,12 @@ describe('CLI Commands', () => {
 
     test('should have username option', () => {
       const cmd = createSyncCommand(mockDiscogsClient, mockDb);
-      const options = cmd.options;
-      expect(options.some((opt) => opt.long === '--username')).toBe(true);
+      expect(cmd.options.some((opt) => opt.long === '--username')).toBe(true);
     });
 
-    test('should fail when username is not provided', async () => {
+    test('should have verbose option', () => {
       const cmd = createSyncCommand(mockDiscogsClient, mockDb);
-
-      // The command structure is defined
-      expect(cmd.name()).toBe('sync');
+      expect(cmd.options.some((opt) => opt.long === '--verbose')).toBe(true);
     });
   });
 
@@ -101,16 +97,15 @@ describe('CLI Commands', () => {
       expect(options.some((opt) => opt.long === '--limit')).toBe(true);
     });
 
-    test('should handle empty results gracefully', async () => {
+    test('should have verbose option', () => {
       const cmd = createListCommand(mockDiscogsClient, mockDb);
-
-      // Command structure is properly defined
-      expect(cmd.name()).toBe('list');
+      expect(cmd.options.some((opt) => opt.long === '--verbose')).toBe(true);
     });
 
-    test('should format and display releases', async () => {
+    test('should have acquired-after and acquired-before options (hyphens)', () => {
       const cmd = createListCommand(mockDiscogsClient, mockDb);
-      expect(cmd.name()).toBe('list');
+      expect(cmd.options.some((opt) => opt.long === '--acquired-after')).toBe(true);
+      expect(cmd.options.some((opt) => opt.long === '--acquired-before')).toBe(true);
     });
   });
 
@@ -136,9 +131,10 @@ describe('CLI Commands', () => {
       expect(cmd.description()).toContain('SoundCloud playlists');
     });
 
-    test('should have title, description, genres, year, and privacy options', () => {
+    test('playlist create subcommand has title, description, genres, year, and privacy options', () => {
       const cmd = createPlaylistCommand(mockDiscogsClient, mockSoundCloudClient, mockDb);
-      const options = cmd.options;
+      const create = cmd.commands.find(c => c.name() === 'create')!;
+      const options = create.options;
       expect(options.some((opt) => opt.long === '--title')).toBe(true);
       expect(options.some((opt) => opt.long === '--description')).toBe(true);
       expect(options.some((opt) => opt.long === '--genres')).toBe(true);
@@ -147,14 +143,22 @@ describe('CLI Commands', () => {
       expect(options.some((opt) => opt.long === '--private')).toBe(true);
     });
 
-    test('should fail when title is not provided', async () => {
+    test('playlist create has acquired-after and acquired-before options (hyphens)', () => {
       const cmd = createPlaylistCommand(mockDiscogsClient, mockSoundCloudClient, mockDb);
-      expect(cmd.name()).toBe('playlist');
+      const create = cmd.commands.find(c => c.name() === 'create')!;
+      expect(create.options.some((opt) => opt.long === '--acquired-after')).toBe(true);
+      expect(create.options.some((opt) => opt.long === '--acquired-before')).toBe(true);
     });
+  });
 
-    test('should parse comma-separated genres correctly', () => {
-      const cmd = createPlaylistCommand(mockDiscogsClient, mockSoundCloudClient, mockDb);
-      expect(cmd.name()).toBe('playlist');
+  describe('collection command group', () => {
+    test('collection command wraps sync, list, stats, retry', () => {
+      const cmd = createCollectionCommand(mockDiscogsClient, mockDb);
+      const names = cmd.commands.map(c => c.name());
+      expect(names).toContain('sync');
+      expect(names).toContain('list');
+      expect(names).toContain('stats');
+      expect(names).toContain('retry');
     });
   });
 
@@ -163,7 +167,7 @@ describe('CLI Commands', () => {
       const cmd = createSyncCommand(mockDiscogsClient, mockDb);
       const usernameOption = cmd.options.find((opt) => opt.long === '--username');
       expect(usernameOption).toBeDefined();
-      expect(usernameOption?.argParser).toBeDefined();
+      expect(usernameOption?.short).toBe('-u');
     });
 
     test('list command applies limit correctly', () => {
@@ -172,9 +176,10 @@ describe('CLI Commands', () => {
       expect(limitOption?.defaultValue).toBe('50');
     });
 
-    test('playlist command handles genre filtering', () => {
+    test('playlist create command handles genre filtering', () => {
       const cmd = createPlaylistCommand(mockDiscogsClient, mockSoundCloudClient, mockDb);
-      const genresOption = cmd.options.find((opt) => opt.long === '--genres');
+      const create = cmd.commands.find(c => c.name() === 'create')!;
+      const genresOption = create.options.find((opt) => opt.long === '--genres');
       expect(genresOption).toBeDefined();
     });
 
@@ -234,42 +239,31 @@ describe('CLI Commands', () => {
       expect(genreOption?.short).toBe('-g');
     });
 
-    test('list command supports short and long year option', () => {
+    test('list command supports --min-year option', () => {
       const cmd = createListCommand(mockDiscogsClient, mockDb);
       const minYearOption = cmd.options.find((opt) => opt.long === '--min-year');
       expect(minYearOption).toBeDefined();
     });
 
-    test('playlist command supports short and long title option', () => {
+    test('playlist create supports short and long title option', () => {
       const cmd = createPlaylistCommand(mockDiscogsClient, mockSoundCloudClient, mockDb);
-      const titleOption = cmd.options.find((opt) => opt.long === '--title');
+      const create = cmd.commands.find(c => c.name() === 'create')!;
+      const titleOption = create.options.find((opt) => opt.long === '--title');
       expect(titleOption?.short).toBe('-t');
     });
 
-    test('playlist command supports short and long description option', () => {
+    test('playlist create supports short and long description option', () => {
       const cmd = createPlaylistCommand(mockDiscogsClient, mockSoundCloudClient, mockDb);
-      const descOption = cmd.options.find((opt) => opt.long === '--description');
+      const create = cmd.commands.find(c => c.name() === 'create')!;
+      const descOption = create.options.find((opt) => opt.long === '--description');
       expect(descOption?.short).toBe('-d');
     });
 
-    test('playlist command supports short and long genres option', () => {
+    test('playlist create supports short and long genres option', () => {
       const cmd = createPlaylistCommand(mockDiscogsClient, mockSoundCloudClient, mockDb);
-      const genresOption = cmd.options.find((opt) => opt.long === '--genres');
+      const create = cmd.commands.find(c => c.name() === 'create')!;
+      const genresOption = create.options.find((opt) => opt.long === '--genres');
       expect(genresOption?.short).toBe('-g');
-    });
-
-    test('playlist command has acquired_after and acquired_before options', () => {
-      const cmd = createPlaylistCommand(mockDiscogsClient, mockSoundCloudClient, mockDb);
-      const options = cmd.options;
-      expect(options.some((opt) => opt.long === '--acquired_after')).toBe(true);
-      expect(options.some((opt) => opt.long === '--acquired_before')).toBe(true);
-    });
-
-    test('list command has acquired_after and acquired_before options', () => {
-      const cmd = createListCommand(mockDiscogsClient, mockDb);
-      const options = cmd.options;
-      expect(options.some((opt) => opt.long === '--acquired_after')).toBe(true);
-      expect(options.some((opt) => opt.long === '--acquired_before')).toBe(true);
     });
   });
 });

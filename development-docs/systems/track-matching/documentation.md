@@ -85,4 +85,4 @@ Playlist preflight always uses `release.artists` for the search query. Per-track
 
 ## Unmatched Tracks
 
-Tracks that exhaust all strategies without a confident match are saved to `unmatched_tracks` via `db.saveUnmatchedTrack()` with the top-3 near-miss candidates (scored ≥ 0.3) for manual review via the `playlist review` command.
+Tracks that exhaust all strategies without a confident match are saved to `unmatched_tracks` via `db.saveUnmatchedTrack()` with the top-3 near-miss candidates (scored ≥ 0.3) for manual review via the `playlist tracks review` command.

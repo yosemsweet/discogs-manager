@@ -5,19 +5,22 @@ import { CollectionService } from '../services/collection';
 import { Logger } from '../utils/logger';
 import { CommandBuilder } from '../utils/command-builder';
 
-export function registerRetryCommand(program: Command) {
-  program
-    .command('retry <username>')
+export function createRetryCommand(db: DatabaseManager) {
+  return new Command('retry')
     .description('Process retry queue and check DLQ for a user')
-    .action(async (username: string) => {
-      const token = process.env.DISCOGS_TOKEN;
+    .option('-u, --username <username>', 'Discogs username (uses DISCOGS_USERNAME env if not provided)')
+    .action(async (options) => {
+      const token = process.env.DISCOGS_API_TOKEN;
       if (!token) {
-        Logger.error('DISCOGS_TOKEN environment variable not set');
+        console.error('Error: DISCOGS_API_TOKEN environment variable is required');
         process.exit(1);
       }
 
-      const db = new DatabaseManager();
-      await db.initialized;
+      const username = options.username || process.env.DISCOGS_USERNAME;
+      if (!username) {
+        console.error('Error: --username or DISCOGS_USERNAME environment variable is required');
+        process.exit(1);
+      }
 
       const spinner = CommandBuilder.createSpinner();
 
@@ -60,8 +63,6 @@ export function registerRetryCommand(program: Command) {
         const message = error instanceof Error ? error.message : String(error);
         spinner.fail(CommandBuilder.formatError(`Failed to process retry: ${message}`));
         process.exit(1);
-      } finally {
-        await db.close();
       }
     });
 }

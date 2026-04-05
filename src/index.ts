@@ -6,20 +6,17 @@ import chalk from 'chalk';
 import { DiscogsAPIClient } from './api/discogs';
 import { SoundCloudAPIClient } from './api/soundcloud';
 import { DatabaseManager } from './services/database';
-import { createSyncCommand } from './commands/sync';
-import { createListCommand } from './commands/list';
-import { createStatsCommand } from './commands/stats';
+import { createCollectionCommand } from './commands/collection';
+import { createSoundCloudCommand } from './commands/soundcloud';
 import { createPlaylistCommand } from './commands/playlist';
-import { registerRetryCommand } from './commands/retry';
-import { createAuthCommand } from './commands/auth';
-import { createLookupCommand } from './commands/lookup';
+import { createTrackCommand } from './commands/track';
 
 dotenv.config();
 
 program
   .name('discogs-cli')
   .description('CLI for managing Discogs collections and creating SoundCloud playlists')
-  .version('1.0.0')
+  .version('2.0.0')
   .enablePositionalOptions();
 
 // Initialize clients and database
@@ -38,8 +35,6 @@ if (!discogsToken || !discogsUsername) {
 
 const discogsClient = new DiscogsAPIClient(discogsToken, discogsUsername);
 
-// Initialize SoundCloud client only if access token is provided via env var.
-// If not, playlist/review commands will lazy-load the OAuth token from the database.
 let soundcloudClient: SoundCloudAPIClient | null = null;
 if (soundcloudAccessToken) {
   soundcloudClient = new SoundCloudAPIClient(soundcloudAccessToken);
@@ -48,16 +43,31 @@ if (soundcloudAccessToken) {
 const db = new DatabaseManager(dbPath);
 
 // Register commands
-program.addCommand(createSyncCommand(discogsClient, db));
-program.addCommand(createListCommand(discogsClient, db));
-program.addCommand(createStatsCommand(discogsClient, db));
-program.addCommand(createAuthCommand());
-// Always register playlist command - it will lazy-load the token from database
-program.addCommand(
-  createPlaylistCommand(discogsClient, soundcloudClient, db)
-);
-registerRetryCommand(program);
-program.addCommand(createLookupCommand(soundcloudClient, db));
+program.addCommand(createCollectionCommand(discogsClient, db));
+program.addCommand(createSoundCloudCommand());
+program.addCommand(createPlaylistCommand(discogsClient, soundcloudClient, db));
+program.addCommand(createTrackCommand(soundcloudClient, db));
+
+// "Did you mean?" hints for removed top-level commands
+const movedCommands: Record<string, string> = {
+  sync: 'collection sync',
+  list: 'collection list',
+  stats: 'collection stats',
+  retry: 'collection retry',
+  auth: 'soundcloud auth',
+  lookup: 'track lookup',
+};
+
+program.on('command:*', (operands) => {
+  const name = operands[0];
+  const hint = movedCommands[name];
+  if (hint) {
+    console.error(chalk.red(`Unknown command '${name}'. Did you mean: ${hint}?`));
+  } else {
+    console.error(chalk.red(`Unknown command: ${name}`));
+  }
+  process.exit(1);
+});
 
 program.parse(process.argv);
 

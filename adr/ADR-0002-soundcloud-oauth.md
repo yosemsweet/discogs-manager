@@ -26,6 +26,6 @@ Flow:
 
 - No long-lived credentials in `.env` or plaintext files after initial auth
 - PKCE prevents authorization code interception even on localhost
-- Users must run `npm run dev -- auth` once per machine
+- Users must run `npm run dev -- soundcloud auth` once per machine
 - `ENCRYPTION_KEY` must be kept in `.env`; losing it requires re-authentication
 - `src/services/soundcloud-oauth.ts` handles the full PKCE flow; `src/commands/auth.ts` handles the CLI interaction and local callback server

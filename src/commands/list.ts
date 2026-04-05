@@ -6,12 +6,12 @@ import { DiscogsAPIClient } from '../api/discogs';
 import { CommandBuilder } from '../utils/command-builder';
 import { Validator, ValidationError } from '../utils/validator';
 import { InputSanitizer } from '../utils/sanitizer';
-import { Logger } from '../utils/logger';
+import { Logger, LogLevel } from '../utils/logger';
 
 export function createListCommand(discogsClient: DiscogsAPIClient, db: DatabaseManager) {
   const cmd = new Command('list')
     .description('List releases from your collection with optional filters')
-    .argument('[username]', 'Discogs username (optional, uses env if not provided)')
+    .option('-u, --username <username>', 'Discogs username (uses DISCOGS_USERNAME env if not provided)')
     .option('-g, --genres <genres>', 'Filter by genres (comma-separated)')
     .option('--min-year <year>', 'Minimum release year')
     .option('--max-year <year>', 'Maximum release year')
@@ -21,25 +21,32 @@ export function createListCommand(discogsClient: DiscogsAPIClient, db: DatabaseM
     .option('-a, --artists <artists>', 'Filter by artists (comma-separated)')
     .option('-l, --labels <labels>', 'Filter by labels (comma-separated)')
     .option('--limit <limit>', 'Limit number of results', '50')
-    .option('--acquired_after <date>', 'Only include releases acquired on or after this date (YYYY-MM-DD)')
-    .option('--acquired_before <date>', 'Only include releases acquired on or before this date (YYYY-MM-DD)');
+    .option('--acquired-after <date>', 'Only include releases acquired on or after this date (YYYY-MM-DD)')
+    .option('--acquired-before <date>', 'Only include releases acquired on or before this date (YYYY-MM-DD)')
+    .option('-v, --verbose', 'Show detailed output');
 
-  cmd.action(async (username, options) => {
+  cmd.action(async (options) => {
     const spinner = CommandBuilder.createSpinner();
 
     try {
+      if (options.verbose) {
+        Logger.setLogLevel(LogLevel.DEBUG);
+      }
+
+      const username = options.username || process.env.DISCOGS_USERNAME;
+
       // Sanitize input for security
       if (username) {
         const sanitized = InputSanitizer.normalizeString(username);
         if (!sanitized) {
           throw new ValidationError('username', 'Username sanitization failed');
         }
-        username = sanitized;
 
-        if (InputSanitizer.isSuspicious(username)) {
-          Logger.warn('Suspicious username pattern detected', { username });
+        if (InputSanitizer.isSuspicious(sanitized)) {
+          Logger.warn('Suspicious username pattern detected', { username: sanitized });
           throw new ValidationError('username', 'Username contains suspicious patterns');
         }
+        options.username = sanitized;
       }
 
       // Sanitize genre options
@@ -78,9 +85,9 @@ export function createListCommand(discogsClient: DiscogsAPIClient, db: DatabaseM
         options.labels = sanitized;
       }
 
-      // Validate options
+      // Validate options — Commander maps --acquired-after → options.acquiredAfter automatically
       const validated = Validator.validateListOptions({
-        username: username,
+        username: options.username,
         limit: options.limit,
         genres: options.genres,
         minYear: options.minYear,
@@ -90,8 +97,8 @@ export function createListCommand(discogsClient: DiscogsAPIClient, db: DatabaseM
         styles: options.styles,
         artists: options.artists,
         labels: options.labels,
-        acquiredAfter: options.acquired_after,
-        acquiredBefore: options.acquired_before,
+        acquiredAfter: options.acquiredAfter,
+        acquiredBefore: options.acquiredBefore,
       });
 
       const collectionService = new CollectionService(discogsClient, db);

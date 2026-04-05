@@ -33,4 +33,4 @@ Usage: `withTimeout(asyncOperation, { timeout: 30000, retries: 3 })`.
 
 ## Retry Queue
 
-Failed releases during sync are placed in the `retry_queue` table. Run `npm run dev -- retry` to reprocess them. Releases that fail repeatedly are moved to the dead-letter queue (`dlq` table).
+Failed releases during sync are placed in the `retry_queue` table. Run `npm run dev -- collection retry` to reprocess them. Releases that fail repeatedly are moved to the dead-letter queue (`dlq` table).

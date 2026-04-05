@@ -72,7 +72,7 @@ ENCRYPTION_KEY=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2
 This downloads your entire Discogs collection to a local database:
 
 ```bash
-npm run dev -- sync
+npm run dev -- collection sync
 ```
 
 **What to expect:**
@@ -94,7 +94,7 @@ npm run dev -- sync
 ### View Statistics
 
 ```bash
-npm run dev -- stats
+npm run dev -- collection stats
 ```
 
 **Example output:**
@@ -116,7 +116,7 @@ Top Genres:
 ### Browse Your Releases
 
 ```bash
-npm run dev -- list
+npm run dev -- collection list
 ```
 
 Shows a table of all your releases with titles, artists, years, and genres.
@@ -124,19 +124,19 @@ Shows a table of all your releases with titles, artists, years, and genres.
 ### Filter by Genre
 
 ```bash
-npm run dev -- list --genres "Rock"
+npm run dev -- collection list --genres "Rock"
 ```
 
 ### Filter by Year Range
 
 ```bash
-npm run dev -- list --min-year 1970 --max-year 1979
+npm run dev -- collection list --min-year 1970 --max-year 1979
 ```
 
 ### Combine Filters
 
 ```bash
-npm run dev -- list --genres "Jazz" --min-year 2000 --min-rating 4
+npm run dev -- collection list --genres "Jazz" --min-year 2000 --min-rating 4
 ```
 
 ---
@@ -146,13 +146,13 @@ npm run dev -- list --genres "Jazz" --min-year 2000 --min-rating 4
 ### Workflow 1: Find Your 80s Rock Albums
 
 ```bash
-npm run dev -- list --genres "Rock" --min-year 1980 --max-year 1989
+npm run dev -- collection list --genres "Rock" --min-year 1980 --max-year 1989
 ```
 
 ### Workflow 2: See Your Highest Rated Releases
 
 ```bash
-npm run dev -- list --min-rating 4
+npm run dev -- collection list --min-rating 4
 ```
 
 ### Workflow 3: Update Your Collection
@@ -160,7 +160,7 @@ npm run dev -- list --min-rating 4
 Run this periodically to add new releases you've added to Discogs:
 
 ```bash
-npm run dev -- sync
+npm run dev -- collection sync
 ```
 
 It only syncs new releases (skips existing ones), so it's fast!
@@ -170,7 +170,7 @@ It only syncs new releases (skips existing ones), so it's fast!
 If you've updated ratings or metadata on Discogs:
 
 ```bash
-npm run dev -- sync --force
+npm run dev -- collection sync --force
 ```
 
 This re-downloads all release data (slower but updates everything).
@@ -199,7 +199,7 @@ SOUNDCLOUD_CLIENT_ID=paste_your_client_id_here
 ### 3. Authenticate
 
 ```bash
-npm run dev -- auth
+npm run dev -- soundcloud auth
 ```
 
 This opens your browser to authorize the app. Click "Connect" and you're done!
@@ -207,7 +207,7 @@ This opens your browser to authorize the app. Click "Connect" and you're done!
 ### 4. Create a Playlist
 
 ```bash
-npm run dev -- playlist --title "80s Rock Classics" --genres "Rock" --min-year 1980 --max-year 1989
+npm run dev -- playlist create --title "80s Rock Classics" --genres "Rock" --min-year 1980 --max-year 1989
 ```
 
 **What happens:**
@@ -230,11 +230,11 @@ npm run dev -- playlist --title "80s Rock Classics" --genres "Rock" --min-year 1
 
 | Command | What It Does |
 |---------|-------------|
-| `npm run dev -- sync` | Download your Discogs collection |
-| `npm run dev -- list` | View your releases |
-| `npm run dev -- stats` | See collection statistics |
-| `npm run dev -- playlist --title "My Playlist" --genres "Rock"` | Create SoundCloud playlist |
-| `npm run dev -- auth` | Authenticate with SoundCloud |
+| `npm run dev -- collection sync` | Download your Discogs collection |
+| `npm run dev -- collection list` | View your releases |
+| `npm run dev -- collection stats` | See collection statistics |
+| `npm run dev -- playlist create --title "My Playlist" --genres "Rock"` | Create SoundCloud playlist |
+| `npm run dev -- soundcloud auth` | Authenticate with SoundCloud |
 
 ### Useful Filters
 
@@ -250,22 +250,22 @@ npm run dev -- playlist --title "80s Rock Classics" --genres "Rock" --min-year 1
 
 **Find 90s Hip Hop:**
 ```bash
-npm run dev -- list --genres "Hip Hop" --min-year 1990 --max-year 1999
+npm run dev -- collection list --genres "Hip Hop" --min-year 1990 --max-year 1999
 ```
 
 **Create Jazz Favorites Playlist:**
 ```bash
-npm run dev -- playlist --title "Jazz Favorites" --genres "Jazz" --min-rating 4
+npm run dev -- playlist create --title "Jazz Favorites" --genres "Jazz" --min-rating 4
 ```
 
 **View Detailed Statistics:**
 ```bash
-npm run dev -- stats --verbose
+npm run dev -- collection stats --verbose
 ```
 
 **List Electronic Music:**
 ```bash
-npm run dev -- list --genres "Electronic"
+npm run dev -- collection list --genres "Electronic"
 ```
 
 ---
@@ -289,14 +289,14 @@ Just wait—it will resume automatically.
 
 You need to sync first:
 ```bash
-npm run dev -- sync
+npm run dev -- collection sync
 ```
 
 ### "Failed to fetch release"
 
 Some releases may fail temporarily. They're automatically queued for retry:
 ```bash
-npm run dev -- retry
+npm run dev -- collection retry
 ```
 
 ### Database is locked
@@ -365,20 +365,20 @@ You've learned how to:
 **Most common workflow:**
 ```bash
 # First time
-npm run dev -- sync
+npm run dev -- collection sync
 
 # Browse and filter
-npm run dev -- list --genres "Rock" --min-year 1970 --max-year 1979
-npm run dev -- stats
+npm run dev -- collection list --genres "Rock" --min-year 1970 --max-year 1979
+npm run dev -- collection stats
 
 # Update periodically
-npm run dev -- sync
+npm run dev -- collection sync
 ```
 
 **Enjoy managing your music collection!** 🎵
 
 ---
 
-**Version**: 1.0.0
+**Version**: 2.0.0
 **License**: MIT
 **Full Documentation**: [README.md](README.md)

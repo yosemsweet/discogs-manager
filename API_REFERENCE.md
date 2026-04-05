@@ -571,7 +571,7 @@ import { DiscogsAPIClient } from './api/discogs';
 import { DatabaseManager } from './services/database';
 import { CollectionService } from './services/collection';
 
-const client = new DiscogsAPIClient(process.env.DISCOGS_TOKEN!, 'yosemsweet');
+const client = new DiscogsAPIClient(process.env.DISCOGS_API_TOKEN!, 'yosemsweet');
 const db = new DatabaseManager('./data/discogs-manager.db');
 await db.initialized;
 

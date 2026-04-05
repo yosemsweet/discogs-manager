@@ -9,8 +9,8 @@ Fetches a user's Discogs vinyl collection via the Discogs API and stores release
 ## Usage
 
 ```bash
-npm run dev -- sync              # Incremental sync (skips already-synced releases)
-npm run dev -- sync --force      # Full re-sync (re-fetches all releases)
+npm run dev -- collection sync              # Incremental sync (skips already-synced releases)
+npm run dev -- collection sync --force      # Full re-sync (re-fetches all releases)
 ```
 
 ---
@@ -28,7 +28,7 @@ sync command
       3. Report: added / updated / failed counts
 ```
 
-Releases that fail to fetch are added to a retry queue (`retry_queue` table) and can be retried with `npm run dev -- retry`.
+Releases that fail to fetch are added to a retry queue (`retry_queue` table) and can be retried with `npm run dev -- collection retry`.
 
 ---
 

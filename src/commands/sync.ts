@@ -5,20 +5,25 @@ import { CollectionService } from '../services/collection';
 import { CommandBuilder } from '../utils/command-builder';
 import { Validator, ValidationError } from '../utils/validator';
 import { InputSanitizer } from '../utils/sanitizer';
-import { Logger } from '../utils/logger';
+import { Logger, LogLevel } from '../utils/logger';
 
 export function createSyncCommand(discogsClient: DiscogsAPIClient, db: DatabaseManager) {
   const cmd = new Command('sync')
     .description('Sync your Discogs collection to the local database')
     .option('-u, --username <username>', 'Discogs username')
     .option('-f, --force', 'Force refresh all releases from Discogs API')
-    .option('--release-ids <ids>', 'Comma-separated Discogs release IDs (for testing/debugging)');
+    .option('--release-ids <ids>', 'Comma-separated Discogs release IDs (for testing/debugging)')
+    .option('-v, --verbose', 'Show detailed sync output');
 
   // Use CommandBuilder for unified error handling
   cmd.action(async (options) => {
     const spinner = CommandBuilder.createSpinner();
 
     try {
+      if (options.verbose) {
+        Logger.setLogLevel(LogLevel.DEBUG);
+      }
+
       // Sanitize input options for security
       if (options.username) {
         const sanitized = InputSanitizer.normalizeString(options.username);

@@ -38,11 +38,11 @@ npm run lint           # ESLint on src/
 
 The CLI binary is `discogs-cli`. During development use `npm run dev -- <subcommand>`, e.g.:
 ```bash
-npm run dev -- sync --force
-npm run dev -- list --genres "Jazz" --limit 20
-npm run dev -- playlist --title "My Playlist" --genres "Rock"
-npm run dev -- auth          # SoundCloud OAuth flow
-npm run dev -- retry         # Process failed-release retry queue
+npm run dev -- collection sync --force
+npm run dev -- collection list --genres "Jazz" --limit 20
+npm run dev -- playlist create --title "My Playlist" --genres "Rock"
+npm run dev -- soundcloud auth   # SoundCloud OAuth flow
+npm run dev -- collection retry  # Process failed-release retry queue
 ```
 
 ## Architecture

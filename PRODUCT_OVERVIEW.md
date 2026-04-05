@@ -161,7 +161,7 @@ Discogs Manager CLI eliminates these pain points with a single, unified command-
 
 **Solution**:
 ```bash
-npm run dev -- playlist --title "80s Rock Night" --genres "Rock" --min-year 1980 --max-year 1989 --min-rating 4
+npm run dev -- playlist create --title "80s Rock Night" --genres "Rock" --min-year 1980 --max-year 1989 --min-rating 4
 ```
 
 The tool automatically creates a SoundCloud playlist with tracks matching these criteria.
@@ -181,10 +181,10 @@ The tool automatically creates a SoundCloud playlist with tracks matching these 
 **Solution**: Create a cron job that runs:
 ```bash
 # Weekly sync
-0 0 * * 0 cd /path/to/discogs-manager && npm run dev -- sync
+0 0 * * 0 cd /path/to/discogs-manager && npm run dev -- collection sync
 
 # Monthly "New Additions" playlist
-0 0 1 * * cd /path/to/discogs-manager && npm run dev -- playlist --title "New This Month" --genres "All"
+0 0 1 * * cd /path/to/discogs-manager && npm run dev -- playlist create --title "New This Month"
 ```
 
 ### 5. Data Export
@@ -266,7 +266,7 @@ Whether you're a music collector organizing hundreds of releases, a DJ creating 
 
 ---
 
-**Version**: 1.0.0
+**Version**: 2.0.0
 **Status**: Production Ready
 **Test Coverage**: 99.8%
 **License**: MIT

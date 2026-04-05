@@ -1,6 +1,6 @@
 {
   "name": "discogs-manager",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "CLI tool for managing Discogs collections and creating SoundCloud playlists",
   "main": "dist/index.js",
   "bin": {

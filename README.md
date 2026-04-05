@@ -126,7 +126,7 @@ SOUNDCLOUD_CLIENT_ID=your_client_id_here
 The CLI includes an OAuth 2.1 authentication command:
 
 ```bash
-npm run dev -- auth
+npm run dev -- soundcloud auth
 ```
 
 **What happens:**
@@ -147,7 +147,7 @@ npm run dev -- auth
 Once you've run the auth command, verify it worked:
 
 ```bash
-npm run dev -- playlist --title "Test Playlist" --genres "Rock"
+npm run dev -- playlist create --title "Test Playlist" --genres "Rock"
 ```
 
 If successful, a playlist will be created on your SoundCloud account.
@@ -157,7 +157,7 @@ If successful, a playlist will be created on your SoundCloud account.
 Test your setup:
 
 ```bash
-npm run dev -- stats
+npm run dev -- collection stats
 ```
 
 You should see your collection statistics. If you get an error, check:
@@ -174,16 +174,16 @@ Once configured, here's how to get started:
 
 ```bash
 # 1. Sync your collection from Discogs (one-time setup)
-npm run dev -- sync
+npm run dev -- collection sync
 
 # 2. View statistics about your collection
-npm run dev -- stats
+npm run dev -- collection stats
 
 # 3. List your releases
-npm run dev -- list
+npm run dev -- collection list
 
 # 4. Create a playlist on SoundCloud (requires SoundCloud setup)
-npm run dev -- playlist --title "My First Playlist" --genres "Rock"
+npm run dev -- playlist create --title "My First Playlist" --genres "Rock"
 ```
 
 Each command shows helpful error messages if anything is misconfigured.
@@ -196,36 +196,36 @@ Each command shows helpful error messages if anything is misconfigured.
 
 ```bash
 # Step 1: Sync your entire collection (takes a few minutes)
-npm run dev -- sync
+npm run dev -- collection sync
 
 # Step 2: Check what was synced
-npm run dev -- stats
+npm run dev -- collection stats
 ```
 
 #### Workflow 2: Browse Your Collection
 
 ```bash
 # View all releases (paginated)
-npm run dev -- list
+npm run dev -- collection list
 
 # Filter by genre
-npm run dev -- list --genres "Rock,Jazz"
+npm run dev -- collection list --genres "Rock,Jazz"
 
 # Filter by year
-npm run dev -- list --min-year 1970 --max-year 1989
+npm run dev -- collection list --min-year 1970 --max-year 1989
 
 # Combine filters
-npm run dev -- list --genres "Electronic" --min-year 2000 --min-rating 4
+npm run dev -- collection list --genres "Electronic" --min-year 2000 --min-rating 4
 ```
 
 #### Workflow 3: Create a Playlist
 
 ```bash
 # Create a simple playlist
-npm run dev -- playlist --title "Rock Classics" --genres "Rock"
+npm run dev -- playlist create --title "Rock Classics" --genres "Rock"
 
 # Create a curated playlist
-npm run dev -- playlist \
+npm run dev -- playlist create \
   --title "80s Best" \
   --min-year 1980 \
   --max-year 1989 \
@@ -237,23 +237,23 @@ npm run dev -- playlist \
 
 ```bash
 # Regular update (adds new releases, skips existing ones)
-npm run dev -- sync
+npm run dev -- collection sync
 
 # Force refresh all releases (slower but updates everything)
-npm run dev -- sync --force
+npm run dev -- collection sync --force
 ```
 
 ---
 
 ## Commands
 
-### `auth` - Authenticate with SoundCloud
+### `soundcloud auth` - Authenticate with SoundCloud
 
 Authenticate with SoundCloud using OAuth 2.1 to enable playlist creation.
 
 **Syntax:**
 ```bash
-npm run dev -- auth
+npm run dev -- soundcloud auth
 ```
 
 **What It Does:**
@@ -261,18 +261,18 @@ npm run dev -- auth
 2. You grant the app permission to access your SoundCloud account
 3. After authorization, you're redirected with a code
 4. The CLI exchanges this code for a user token
-5. Token is automatically saved to `.env` as `SOUNDCLOUD_USER_TOKEN`
+5. Token is stored encrypted in the local database
 
 **Example:**
 ```bash
-npm run dev -- auth
+npm run dev -- soundcloud auth
 ```
 
 **Output:**
 ```
 [INFO] Opening SoundCloud authorization page...
 [INFO] Waiting for authorization...
-[INFO] ✓ Successfully authenticated! Token saved to .env
+[INFO] ✓ Successfully authenticated! Token saved to database
 ```
 
 **Troubleshooting:**
@@ -282,41 +282,37 @@ npm run dev -- auth
 
 ---
 
-### `sync` - Synchronize Your Collection
+### `collection sync` - Synchronize Your Collection
 
 Fetches all releases from your Discogs collection and stores them locally in SQLite.
 
 **Syntax:**
 ```bash
-npm run dev -- sync [username] [options]
+npm run dev -- collection sync [options]
 ```
 
-**Arguments:**
-- `[username]` - Discogs username (optional, uses `DISCOGS_USERNAME` from `.env` if not provided)
-
 **Options:**
+- `-u, --username <username>` - Discogs username (falls back to `DISCOGS_USERNAME` env var)
 - `-f, --force` - Force refresh all releases from API (skip database cache)
+- `-v, --verbose` - Enable debug-level logging
 
 **Examples:**
 ```bash
 # Sync using username from .env (recommended)
-npm run dev -- sync
+npm run dev -- collection sync
 
 # Sync specific username
-npm run dev -- sync yosemsweet
+npm run dev -- collection sync --username yosemsweet
 
 # Force refresh all releases
-npm run dev -- sync --force
-
-# Force refresh for specific user
-npm run dev -- sync yosemsweet --force
+npm run dev -- collection sync --force
 ```
 
 **What Happens:**
 - Fetches paginated collection from Discogs (50 items per page)
 - Skips releases already in the local database (unless `--force`)
 - Stores release metadata: title, artists, year, genres, styles
-- Queues failed releases for retry (see `retry` command)
+- Queues failed releases for retry (see `collection retry`)
 - Logs progress with real-time updates
 - Shows final summary with success/skip/failure counts
 
@@ -327,19 +323,17 @@ npm run dev -- sync yosemsweet --force
 
 ---
 
-### `list` - View Your Collection
+### `collection list` - View Your Collection
 
 Display releases from your collection with optional filtering.
 
 **Syntax:**
 ```bash
-npm run dev -- list [username] [options]
+npm run dev -- collection list [options]
 ```
 
-**Arguments:**
-- `[username]` - Discogs username (optional, uses `DISCOGS_USERNAME` from `.env` if not provided)
-
 **Options:**
+- `-u, --username <username>` - Discogs username (falls back to `DISCOGS_USERNAME` env var)
 - `-g, --genres <genres>` - Filter by genres (comma-separated), e.g., "Rock,Jazz"
 - `--min-year <year>` - Minimum release year (inclusive)
 - `--max-year <year>` - Maximum release year (inclusive)
@@ -348,35 +342,38 @@ npm run dev -- list [username] [options]
 - `-s, --styles <styles>` - Filter by styles (comma-separated), e.g., "Funk,Soul"
 - `-a, --artists <artists>` - Filter by artists (comma-separated), e.g., "Miles Davis,John Coltrane"
 - `-l, --labels <labels>` - Filter by labels (comma-separated), e.g., "Blue Note,Columbia"
+- `--acquired-after <date>` - Only releases added to collection after this date (YYYY-MM-DD)
+- `--acquired-before <date>` - Only releases added to collection before this date (YYYY-MM-DD)
+- `-v, --verbose` - Enable debug-level logging
 
 **Examples:**
 ```bash
 # List all releases
-npm run dev -- list
+npm run dev -- collection list
 
 # List rock releases
-npm run dev -- list --genres "Rock"
+npm run dev -- collection list --genres "Rock"
 
 # List releases from 1970-1989
-npm run dev -- list --min-year 1970 --max-year 1989
+npm run dev -- collection list --min-year 1970 --max-year 1989
 
 # List releases from 1980s with high ratings
-npm run dev -- list --min-year 1980 --max-year 1989 --min-rating 4
+npm run dev -- collection list --min-year 1980 --max-year 1989 --min-rating 4
 
 # Combine multiple filters
-npm run dev -- list --genres "Rock,Alternative" --min-year 2000
+npm run dev -- collection list --genres "Rock,Alternative" --min-year 2000
 
 # View albums by style
-npm run dev -- list --styles "Electronic,Ambient"
+npm run dev -- collection list --styles "Electronic,Ambient"
 
 # View albums by artist
-npm run dev -- list --artists "The Beatles,Pink Floyd"
+npm run dev -- collection list --artists "The Beatles,Pink Floyd"
 
 # View albums by label
-npm run dev -- list --labels "Blue Note Records"
+npm run dev -- collection list --labels "Blue Note Records"
 
 # Complex filtering: Jazz by specific artists on specific labels
-npm run dev -- list --genres "Jazz" --artists "Miles Davis,John Coltrane" --labels "Blue Note,Columbia"
+npm run dev -- collection list --genres "Jazz" --artists "Miles Davis,John Coltrane" --labels "Blue Note,Columbia"
 ```
 
 **Output Format:**
@@ -389,31 +386,26 @@ The Dark Side of the Moon    | Pink Floyd        | 1973 | Rock, Progressive| 5
 
 ---
 
-### `stats` - Collection Statistics
+### `collection stats` - Collection Statistics
 
 Display comprehensive statistics about your collection.
 
 **Syntax:**
 ```bash
-npm run dev -- stats [username] [options]
+npm run dev -- collection stats [options]
 ```
 
-**Arguments:**
-- `[username]` - Discogs username (optional, uses `DISCOGS_USERNAME` from `.env` if not provided)
-
 **Options:**
+- `-u, --username <username>` - Discogs username (falls back to `DISCOGS_USERNAME` env var)
 - `-v, --verbose` - Show detailed stats including style breakdown
 
 **Examples:**
 ```bash
 # Show collection statistics
-npm run dev -- stats
+npm run dev -- collection stats
 
 # Show statistics with style breakdown
-npm run dev -- stats --verbose
-
-# Show stats for specific user
-npm run dev -- stats yosemsweet --verbose
+npm run dev -- collection stats --verbose
 ```
 
 **Output:**
@@ -431,48 +423,27 @@ Top Genres:
   ...
 ```
 
-**Output with --verbose:**
-```
-Collection Statistics for yosemsweet
-─────────────────────────────────────
-Total Releases: 42
-Total Genres: 18
-Year Range: 1969 - 2023
-
-Top Genres:
-  • Rock: 15 releases
-  • Electronic: 8 releases
-  • Jazz: 5 releases
-  ...
-
-Top Styles:
-  • Alternative Rock: 7 releases
-  • Synth-pop: 5 releases
-  • Post-bop: 3 releases
-  ...
-```
-
 ---
 
-### `retry` - Process Failed Releases
+### `collection retry` - Process Failed Releases
 
 Process the retry queue and view the dead letter queue (DLQ) for permanently failed releases.
 
 **Syntax:**
 ```bash
-npm run dev -- retry [username]
+npm run dev -- collection retry [options]
 ```
 
-**Arguments:**
-- `[username]` - Discogs username (optional, uses `DISCOGS_USERNAME` from `.env` if not provided)
+**Options:**
+- `-u, --username <username>` - Discogs username (falls back to `DISCOGS_USERNAME` env var)
 
 **Examples:**
 ```bash
 # Retry failed releases
-npm run dev -- retry
+npm run dev -- collection retry
 
-# Check which releases are in the DLQ
-npm run dev -- retry yosemsweet
+# Retry for a specific user
+npm run dev -- collection retry --username yosemsweet
 ```
 
 **What Happens:**
@@ -486,66 +457,78 @@ npm run dev -- retry yosemsweet
 - Max 3 retry attempts per release
 - Automatically queued on transient errors (rate limit, network errors)
 - 404 errors go directly to DLQ (resource doesn't exist)
-- Reset with `--force-refresh` on sync to ignore queue
 
 ---
 
-### `playlist` - Create SoundCloud Playlists
+### `playlist create` / `playlist update` - Manage SoundCloud Playlists
 
-Create SoundCloud playlists from filtered subsets of your collection.
+Create or update SoundCloud playlists from filtered subsets of your collection.
 
 **Syntax:**
 ```bash
-npm run dev -- playlist [username] --title <title> [options]
+npm run dev -- playlist create --title <title> [options]
+npm run dev -- playlist update --title <title> [options]
 ```
-
-**Arguments:**
-- `[username]` - Discogs username (optional, uses `DISCOGS_USERNAME` from `.env` if not provided)
 
 **Options:**
 - `-t, --title <title>` - Playlist title (required)
-- `-d, --description <description>` - Playlist description (optional)
+- `-d, --description <description>` - Playlist description
 - `-g, --genres <genres>` - Filter by genres (comma-separated)
 - `--min-year <year>` - Minimum release year
 - `--max-year <year>` - Maximum release year
-- `--min-rating <rating>` - Minimum rating (0-5)
-- `--max-rating <rating>` - Maximum rating (0-5)
 - `-s, --styles <styles>` - Filter by styles (comma-separated)
 - `-a, --artists <artists>` - Filter by artists (comma-separated)
 - `-l, --labels <labels>` - Filter by labels (comma-separated)
+- `--acquired-after <date>` - Only releases acquired after this date
+- `--acquired-before <date>` - Only releases acquired before this date
+- `--private` - Make the playlist private on SoundCloud
+- `-v, --verbose` - Enable debug-level logging
 
 **Examples:**
 ```bash
 # Create a Rock playlist
-npm run dev -- playlist --title "Rock Classics" --genres "Rock"
+npm run dev -- playlist create --title "Rock Classics" --genres "Rock"
 
 # Create a 1980s playlist with description
-npm run dev -- playlist --title "80s Hits" --min-year 1980 --max-year 1989 \
+npm run dev -- playlist create --title "80s Hits" --min-year 1980 --max-year 1989 \
   --description "The best albums from the 1980s"
 
 # Create a high-rated Jazz playlist
-npm run dev -- playlist --title "Jazz Favorites" --genres "Jazz" --min-rating 4
+npm run dev -- playlist create --title "Jazz Favorites" --genres "Jazz" --min-rating 4
 
-# Complex filtering: Electronic music from 2000+ with high ratings
-npm run dev -- playlist --title "Modern Electronic" --genres "Electronic" \
-  --min-year 2000 --min-rating 3 --description "Contemporary electronic music"
+# Update an existing playlist with new filters
+npm run dev -- playlist update --title "Jazz Favorites" --acquired-after 2026-01-01
 
 # Create by style
-npm run dev -- playlist --title "Funk & Soul" --styles "Funk,Soul"
-
-# Create by artist
-npm run dev -- playlist --title "Beatles Collection" --artists "The Beatles"
-
-# Create by label
-npm run dev -- playlist --title "Blue Note Jazz" --labels "Blue Note Records"
+npm run dev -- playlist create --title "Funk & Soul" --styles "Funk,Soul"
 
 # Complex: 60s Jazz by specific artists on specific labels
-npm run dev -- playlist --title "60s Jazz Masters" \
+npm run dev -- playlist create --title "60s Jazz Masters" \
   --genres "Jazz" --artists "Miles Davis,John Coltrane" \
   --labels "Blue Note,Columbia" --min-year 1960 --max-year 1969
 ```
 
 **Note:** Requires SoundCloud API credentials in `.env` file (see [Configuration](#configuration) section).
+
+### Other `playlist` subcommands
+
+```bash
+# Review and resolve unmatched tracks
+npm run dev -- playlist tracks review --title "My Jazz"
+npm run dev -- playlist tracks unmatched --title "My Jazz"
+npm run dev -- playlist tracks reset --title "My Jazz"
+
+# Export matched/unmatched tracks to CSV
+npm run dev -- playlist export --title "My Jazz"
+npm run dev -- playlist export --title "My Jazz" --out ./my-jazz.csv
+
+# Delete a playlist
+npm run dev -- playlist delete --title "My Jazz"
+npm run dev -- playlist delete --title "My Jazz" --keep-remote  # local data only
+
+# Reverse lookup: find the Discogs track for a SoundCloud URL
+npm run dev -- track lookup https://soundcloud.com/artist/track-name
+```
 
 ---
 
@@ -562,7 +545,7 @@ When a release fails to sync (due to network errors, rate limits, etc.), it's au
 To retry failed releases later:
 
 ```bash
-npm run dev -- retry yosemsweet
+npm run dev -- collection retry
 ```
 
 ### Dead Letter Queue (DLQ)
@@ -669,12 +652,12 @@ SELECT * FROM dlq;
 
 2. **Subsequent Syncs**: Much faster as existing releases are skipped
    ```bash
-   npm run dev -- sync yosemsweet  # Skips cached releases, only fetches new ones
+   npm run dev -- collection sync  # Skips cached releases, only fetches new ones
    ```
 
 3. **Force Refresh**: Use `--force` only when needed to refresh all data
    ```bash
-   npm run dev -- sync yosemsweet --force  # Slower but updates all metadata
+   npm run dev -- collection sync --force  # Slower but updates all metadata
    ```
 
 4. **Batch Operations**: Combine filtering to reduce API calls
@@ -713,11 +696,18 @@ discogs-manager/
 │   │   ├── discogs.ts           # Discogs API client with rate limiting & throttling
 │   │   └── soundcloud.ts        # SoundCloud API client
 │   ├── commands/
-│   │   ├── sync.ts              # Sync command handler
-│   │   ├── list.ts              # List command handler
-│   │   ├── stats.ts             # Stats command handler
-│   │   ├── playlist.ts          # Playlist command handler
-│   │   └── retry.ts             # Retry queue processor
+│   │   ├── collection.ts        # `collection` command group (sync/list/stats/retry)
+│   │   ├── sync.ts              # `collection sync` handler
+│   │   ├── list.ts              # `collection list` handler
+│   │   ├── stats.ts             # `collection stats` handler
+│   │   ├── retry.ts             # `collection retry` handler
+│   │   ├── soundcloud.ts        # `soundcloud` command group (auth)
+│   │   ├── auth.ts              # `soundcloud auth` handler
+│   │   ├── playlist.ts          # `playlist` command group + create/update/delete/export
+│   │   ├── review.ts            # `playlist tracks review/unmatched/reset` handlers
+│   │   ├── export.ts            # `playlist export` handler
+│   │   ├── track.ts             # `track` command group (lookup)
+│   │   └── lookup.ts            # `track lookup` handler
 │   ├── services/
 │   │   ├── collection.ts        # Collection business logic & filtering
 │   │   ├── database.ts          # SQLite database manager
@@ -727,20 +717,11 @@ discogs-manager/
 │   ├── utils/
 │   │   ├── logger.ts            # Logging utility
 │   │   ├── progress.ts          # Progress tracking & callbacks
-│   │   ├── formatters.ts        # Output formatting
-│   │   └── retry.ts             # Retry utilities
+│   │   └── formatters.ts        # Output formatting
 │   └── index.ts                 # CLI entry point
-├── tests/
-│   ├── api.test.ts              # API client tests
-│   ├── collection.test.ts       # Collection service tests
-│   ├── database.test.ts         # Database tests
-│   ├── commands.test.ts         # Command handler tests
-│   ├── error-handling.test.ts   # Error & edge case tests
-│   └── integration.test.ts      # End-to-end tests
+├── tests/                       # Jest test suite
 ├── data/                        # SQLite database
 ├── .env.example                 # Environment template
-├── .github/
-│   └── copilot-instructions.md  # Development guidelines
 ├── tsconfig.json                # TypeScript config
 ├── jest.config.js               # Jest config
 ├── package.json                 # Dependencies
@@ -778,8 +759,8 @@ npm test            # Run test suite
 
 ### "Failed to fetch release" Warnings
 - **Cause:** Individual release fetch failed (404, network issue, etc.)
-- **Solution:** These are automatically queued for retry. Run `npm run dev -- retry <username>` later
-- **Manual Check:** Check the DLQ with `npm run dev -- retry <username>`
+- **Solution:** These are automatically queued for retry. Run `npm run dev -- collection retry` later
+- **Manual Check:** Check the DLQ with `npm run dev -- collection retry`
 
 ### "Invalid credentials"
 - **Cause:** Invalid token or username in `.env`
@@ -794,7 +775,7 @@ npm test            # Run test suite
 
 ### Empty Collection Results
 - **Cause:** Collection not synced yet
-- **Solution:** Run `npm run dev -- sync <username>` first
+- **Solution:** Run `npm run dev -- collection sync` first
 
 ---
 

@@ -18,11 +18,11 @@ Handles SoundCloud authentication using OAuth 2.1 with PKCE and stores tokens en
    SOUNDCLOUD_REDIRECT_URI=http://localhost:8080/callback
    ENCRYPTION_KEY=<64-char hex string>   # generate with: openssl rand -hex 32
    ```
-3. Run `npm run dev -- auth` — opens browser, handles callback, stores tokens
+3. Run `npm run dev -- soundcloud auth` — opens browser, handles callback, stores tokens
 
 ### Token Refresh
 
-Tokens auto-refresh 5 minutes before expiry. If refresh fails (e.g., revoked), re-run `npm run dev -- auth`.
+Tokens auto-refresh 5 minutes before expiry. If refresh fails (e.g., revoked), re-run `npm run dev -- soundcloud auth`.
 
 ---
 
@@ -67,4 +67,4 @@ Table: `soundcloud_tokens` (single row, `id = 1`):
 |-------|-------|-----|
 | "Missing SoundCloud OAuth credentials" | No CLIENT_ID/SECRET in `.env` | Add credentials from soundcloud.com/you/apps |
 | "Browser won't open" | Auto-open failed | Visit the printed URL manually |
-| 401 on API calls | Token expired/revoked | Run `npm run dev -- auth` again |
+| 401 on API calls | Token expired/revoked | Run `npm run dev -- soundcloud auth` again |

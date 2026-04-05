@@ -9,17 +9,19 @@ import { Validator, ValidationError } from '../utils/validator';
 export function createStatsCommand(discogsClient: DiscogsAPIClient, db: DatabaseManager) {
   const cmd = new Command('stats')
     .description('Show collection statistics')
-    .argument('[username]', 'Discogs username (optional, uses env if not provided)')
+    .option('-u, --username <username>', 'Discogs username (uses DISCOGS_USERNAME env if not provided)')
     .option('-v, --verbose', 'Show detailed stats including style breakdown');
 
-  cmd.action(async (username, options) => {
+  cmd.action(async (options) => {
     const spinner = CommandBuilder.createSpinner();
     spinner.text = 'Calculating statistics...';
 
     try {
+      const username = options.username || process.env.DISCOGS_USERNAME;
+
       // Validate options
       const validated = Validator.validateStatsOptions({
-        username: username,
+        username,
       });
 
       const collectionService = new CollectionService(discogsClient, db);

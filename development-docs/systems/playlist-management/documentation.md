@@ -10,12 +10,14 @@ Creates, updates, and deletes SoundCloud playlists from filtered subsets of the 
 
 ```bash
 # Create or update a playlist
-npm run dev -- playlist --title "My Jazz" --genres "Jazz"
-npm run dev -- playlist --title "Recent Haul" --acquired-after 2026-02-01
-npm run dev -- playlist --title "My Jazz" --verbose   # debug-level logging
+npm run dev -- playlist create --title "My Jazz" --genres "Jazz"
+npm run dev -- playlist update --title "My Jazz" --acquired-after 2026-02-01
+npm run dev -- playlist create --title "My Jazz" --verbose   # debug-level logging
 
 # Review and resolve unmatched tracks
-npm run dev -- playlist review --title "My Jazz"
+npm run dev -- playlist tracks review --title "My Jazz"
+npm run dev -- playlist tracks unmatched --title "My Jazz"
+npm run dev -- playlist tracks reset --title "My Jazz"
 
 # Export playlist track matches to CSV
 npm run dev -- playlist export --title "My Jazz"                    # stdout
@@ -26,8 +28,8 @@ npm run dev -- playlist delete --title "My Jazz"
 npm run dev -- playlist delete --title "My Jazz" --keep-remote   # local data only
 
 # Reverse lookup: find the Discogs track and playlists for a SoundCloud URL
-npm run dev -- lookup https://soundcloud.com/artist/track-name
-npm run dev -- lookup "https://soundcloud.com/artist/track?in=artist/sets/album&si=abc123"
+npm run dev -- track lookup https://soundcloud.com/artist/track-name
+npm run dev -- track lookup "https://soundcloud.com/artist/track?in=artist/sets/album&si=abc123"
 ```
 
 ---
@@ -35,7 +37,7 @@ npm run dev -- lookup "https://soundcloud.com/artist/track?in=artist/sets/album&
 ## Create/Update Flow
 
 ```
-playlist command
+playlist create / playlist update command
   → PlaylistService.createOrUpdatePlaylist()
       1. Filter releases from DB via CollectionService.filterReleases()
       2. TrackSearchService.searchTracksForReleases()
@@ -99,7 +101,7 @@ CSV columns: `discogs_artist`, `discogs_release`, `discogs_track`, `soundcloud_t
 ## Reverse Lookup Flow
 
 ```
-lookup command
+track lookup command
   → SoundCloudAPIClient.resolveUrl(url)   ← always via /resolve, never regex
       → track ID
   → DatabaseManager.getTrackLookupData(trackId)
@@ -114,10 +116,11 @@ lookup command
 
 | File | Responsibility |
 |------|---------------|
-| `src/commands/playlist.ts` | `playlist` CLI and subcommand registration |
-| `src/commands/review.ts` | `playlist review`, `playlist delete`, etc. |
+| `src/commands/playlist.ts` | `playlist` CLI: `create`, `update`, `delete`, `export`, `tracks` group |
+| `src/commands/review.ts` | `playlist tracks review`, `unmatched`, `reset`, `delete` logic |
 | `src/commands/export.ts` | `playlist export` — CSV generation |
-| `src/commands/lookup.ts` | `lookup` — reverse SoundCloud URL lookup |
+| `src/commands/lookup.ts` | `track lookup` — reverse SoundCloud URL lookup |
+| `src/commands/track.ts` | `track` command group |
 | `src/services/playlist.ts` | `PlaylistService` — create/update orchestration |
 | `src/services/playlist-batch.ts` | `PlaylistBatchManager` — chunked SoundCloud API calls |
 | `src/services/track-search.ts` | Track matching orchestration |
@@ -129,5 +132,5 @@ lookup command
 
 - **`playlists`** — `id`, `title`, `soundcloudId`, `createdAt`, `updatedAt`
 - **`playlist_releases`** — `playlistId`, `releaseId`, `soundcloudTrackId` (PK on all three — multiple tracks per release allowed)
-- **`track_matches`** — Match cache: `(discogsReleaseId, discogsTrackTitle)` → `soundcloudTrackId` + confidence
+- **`track_matches`** — Match cache: `(discogsReleaseId, discogsTrackTitle)` → `soundcloudTrackId` + confidence + `matchedPermalinkUrl`
 - **`unmatched_tracks`** — Tracks that failed matching, with near-miss candidates JSON
