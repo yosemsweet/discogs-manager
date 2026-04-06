@@ -42,6 +42,16 @@ Discogs Manager CLI eliminates these pain points with a single, unified command-
 - **Style Analysis**: Verbose mode shows detailed style statistics
 - **Rating Patterns**: Analyze your rating distribution
 
+### 4. Ad-Hoc Collection Queries
+- **Purpose-Built Query DSL**: SQL-ish language designed for music collection data — no knowledge of the database schema required
+- **Three Queryable Entities**: `releases`, `tracks`, and `artists`
+- **Flexible Filtering**: `=`, `!=`, `>`, `<`, `>=`, `<=`, `~` (substring), and `contains` (whole-value match in comma-separated fields)
+- **Aggregations**: `count()`, `min()`, `max()`, `avg()`, `sum()` with `group by`, `order by`, and `limit`
+- **Multi-Value Expansion**: Grouping by `genre`, `style`, or `label` automatically expands comma-separated values so each individual value gets its own count
+- **AND Combination Filters**: Find releases matching multiple style/genre criteria simultaneously
+- **JSON Output**: Pipe-clean tabular output by default, `--json` flag for structured data
+- **Entirely Local**: Zero API calls — all queries run against the local SQLite database
+
 ### 4. SoundCloud Playlist Creation
 - **Automatic Playlist Generation**: Create SoundCloud playlists directly from filtered Discogs subsets
 - **Intelligent Track Search**: Automatically finds tracks on SoundCloud matching your Discogs releases
@@ -82,7 +92,7 @@ Discogs Manager CLI eliminates these pain points with a single, unified command-
 
 ### 9. Developer-Friendly Architecture
 - **TypeScript Strict Mode**: Full type safety with comprehensive type annotations
-- **Comprehensive Testing**: 450/451 tests passing (99.8% coverage)
+- **Comprehensive Testing**: 1073 tests passing
 - **Modular Design**: Clean separation of concerns (API → Service → Command layers)
 - **Enhanced Logging**: Structured JSON logging with trace IDs and operation timing
 - **Extensible**: Easy to add new commands and features
@@ -114,15 +124,16 @@ Discogs Manager CLI eliminates these pain points with a single, unified command-
 
 ### For Data-Driven Music Enthusiasts
 - **Statistics**: Rich analytics about genre distribution, year ranges, and ratings
+- **Ad-Hoc Queries**: Explore your collection with a purpose-built query language — no SQL required
 - **Pattern Recognition**: Identify trends in your collecting habits
-- **Visualization Ready**: Export data for further analysis in other tools
+- **Visualization Ready**: Export data for further analysis with `--json` output
 - **Historical Analysis**: Track how your collection evolves over time
 - **Comprehensive Metadata**: All Discogs fields available for analysis
 
 ## Technical Advantages
 
 ### Reliability
-- **99.8% Test Coverage**: 450 passing tests ensure reliability
+- **Comprehensive Test Coverage**: 1073 passing tests ensure reliability
 - **Error Recovery**: Automatic retries, circuit breakers, and fallback mechanisms
 - **Data Integrity**: Database transactions ensure consistency
 - **Graceful Failures**: Partial failures don't crash operations
@@ -169,11 +180,20 @@ The tool automatically creates a SoundCloud playlist with tracks matching these 
 ### 3. Collection Analysis
 **Scenario**: A music enthusiast wants to understand their collecting patterns.
 
-**Solution**: Run `stats` command to see:
-- Total number of releases
-- Genre distribution (e.g., 35% Rock, 25% Electronic, 20% Jazz)
-- Year range (e.g., 1965-2024)
-- Top styles and genres
+**Solution**: Use `collection query` for ad-hoc exploration:
+```bash
+# Genre distribution with individual value counts
+discogs-cli collection query 'releases count(), genre group by genre order by count desc'
+
+# Year breakdown
+discogs-cli collection query 'releases count(), year group by year order by year'
+
+# Artists by release count
+discogs-cli collection query 'artists name, releases order by releases desc'
+
+# Or use collection stats for a high-level summary
+discogs-cli collection stats
+```
 
 ### 4. Automated Workflows
 **Scenario**: A collector wants to automatically sync their collection weekly and generate monthly playlists.
@@ -203,13 +223,13 @@ SELECT genre, COUNT(*) as count FROM releases GROUP BY genre ORDER BY count DESC
 - **Database**: SQLite via better-sqlite3 (WAL mode)
 - **HTTP Client**: Axios with axios-retry
 - **CLI Framework**: Commander.js 11+
-- **Testing**: Jest with 450+ test cases
+- **Testing**: Jest with 1073+ test cases
 - **Security**: Native crypto (AES-256-GCM)
 - **Logging**: Winston with JSON format and daily rotation
 
 ## Quality Metrics
 
-- **Test Pass Rate**: 99.8% (450/451 tests passing)
+- **Test Pass Rate**: 1073 tests passing
 - **Build Status**: Clean compilation with zero TypeScript errors
 - **Code Quality**: ESLint + Prettier enforced
 - **Type Safety**: Strict mode enabled, minimal `any` types
@@ -268,5 +288,5 @@ Whether you're a music collector organizing hundreds of releases, a DJ creating 
 
 **Version**: 2.0.0
 **Status**: Production Ready
-**Test Coverage**: 99.8%
+**Tests**: 1073 passing
 **License**: MIT

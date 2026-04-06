@@ -7,6 +7,7 @@
 - [CollectionService](#collectionservice)
 - [PlaylistService](#playlistservice)
 - [DatabaseManager](#databasemanager)
+- [Query Pipeline](#query-pipeline)
 - [Types](#types)
 
 ---
@@ -430,12 +431,127 @@ async moveToDLQ(releaseId: number, username: string, errorMessage: string): Prom
 async getDLQRecords(username?: string): Promise<Array<{ releaseId: number; errorMessage: string; createdAt: string }>>
 ```
 
+#### `rawQuery(sql, params)`
+
+Execute a raw parameterized SQL query and return rows.
+
+```typescript
+async rawQuery(
+  sql: string,
+  params: (string | number)[]
+): Promise<Record<string, unknown>[]>
+```
+
+**Parameters:**
+- `sql` - Parameterized SQL string (use `?` placeholders)
+- `params` - Values for each `?` placeholder
+
+**Returns:** Array of row objects keyed by column name
+
+**Note:** Used internally by the query pipeline executor. Prefer `collection query` for ad-hoc analysis.
+
 #### `close()`
 
 Close database connection.
 
 ```typescript
 async close(): Promise<void>
+```
+
+---
+
+## Query Pipeline
+
+The query pipeline powers `collection query`. It can be used programmatically:
+
+```typescript
+import { parseQuery } from './services/query/parser';
+import { validateAST } from './services/query/schema';
+import { buildQuery } from './services/query/builder';
+import { executeQuery } from './services/query/executor';
+import { formatResult } from './services/query/formatter';
+```
+
+### `parseQuery(input)`
+
+Parse a query string into an AST.
+
+```typescript
+function parseQuery(input: string): QueryAST
+```
+
+**Throws:** `QueryParseError` with `position` (number) and `expected` (string) on syntax error.
+
+### `validateAST(ast)`
+
+Validate an AST against the schema — checks entity names, field names, and operator compatibility.
+
+```typescript
+function validateAST(ast: QueryAST): void
+```
+
+**Throws:** `SchemaValidationError` with `entity`, `field`, and `reason` on validation failure.
+
+### `buildQuery(ast)`
+
+Generate parameterized SQL from a validated AST.
+
+```typescript
+function buildQuery(ast: QueryAST): BuiltQuery
+
+interface BuiltQuery {
+  sql: string;
+  params: (string | number)[];
+  columns: string[];
+}
+```
+
+### `executeQuery(db, built)`
+
+Run the built query against the database.
+
+```typescript
+async function executeQuery(db: DatabaseManager, built: BuiltQuery): Promise<QueryResult>
+
+interface QueryResult {
+  columns: string[];
+  rows: Record<string, string | number | null>[];
+}
+```
+
+### `formatResult(result, options)`
+
+Format a query result as tabular text or JSON.
+
+```typescript
+function formatResult(result: QueryResult, options: FormatOptions): string
+
+interface FormatOptions {
+  json: boolean;    // true → JSON, false → tabular
+  isTTY: boolean;   // controls ANSI codes (currently unused; output is always pipe-clean)
+}
+```
+
+### Example
+
+```typescript
+import { DatabaseManager } from './services/database';
+import { parseQuery } from './services/query/parser';
+import { validateAST } from './services/query/schema';
+import { buildQuery } from './services/query/builder';
+import { executeQuery } from './services/query/executor';
+import { formatResult } from './services/query/formatter';
+
+const db = new DatabaseManager('./data/discogs-manager.db');
+await db.initialized;
+
+const ast = parseQuery("releases count(), genre group by genre order by count desc");
+validateAST(ast);
+const built = buildQuery(ast);
+const result = await executeQuery(db, built);
+console.log(formatResult(result, { json: false, isTTY: false }));
+
+await db.close();
 ```
 
 ---
