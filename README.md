@@ -6,6 +6,7 @@ A powerful command-line interface for managing your Discogs music collection and
 
 - **📦 Sync Collections**: Connect to your Discogs account and sync your entire collection locally with automatic pagination support
 - **🔍 Advanced Filtering**: Filter releases by genre, year, style, artist, label, and rating
+- **🔎 Ad-Hoc Queries**: Query your collection with a purpose-built DSL — filter, aggregate, group, sort, and limit entirely from the local database
 - **📊 Collection Statistics**: View comprehensive statistics including total count, genre breakdown, and year range
 - **🎵 Create Playlists**: Automatically create SoundCloud playlists from filtered collection subsets
 - **💾 Local Database**: Fast SQLite database (better-sqlite3) for caching your collection
@@ -202,7 +203,7 @@ npm run dev -- collection sync
 npm run dev -- collection stats
 ```
 
-#### Workflow 2: Browse Your Collection
+#### Workflow 2: Browse and Query Your Collection
 
 ```bash
 # View all releases (paginated)
@@ -211,11 +212,10 @@ npm run dev -- collection list
 # Filter by genre
 npm run dev -- collection list --genres "Rock,Jazz"
 
-# Filter by year
-npm run dev -- collection list --min-year 1970 --max-year 1989
-
-# Combine filters
-npm run dev -- collection list --genres "Electronic" --min-year 2000 --min-rating 4
+# Ad-hoc queries with the query DSL
+npm run dev -- collection query 'releases count(), genre group by genre order by count desc'
+npm run dev -- collection query "releases title, year where genre contains 'Jazz' and rating = 5"
+npm run dev -- collection query 'artists name, releases order by releases desc'
 ```
 
 #### Workflow 3: Create a Playlist
@@ -422,6 +422,57 @@ Top Genres:
   • Jazz: 5 releases
   ...
 ```
+
+---
+
+### `collection query` - Ad-Hoc Collection Queries
+
+Query your collection with a lightweight SQL-ish DSL. All queries run locally against SQLite — no API calls.
+
+**Syntax:**
+```bash
+npm run dev -- collection query '<query>' [--json]
+```
+
+**Entities:** `releases`, `tracks`, `artists`
+
+**Operators:** `=`, `!=`, `>`, `<`, `>=`, `<=`, `~` (case-insensitive substring), `contains` (whole-value match in comma-separated fields)
+
+**Aggregations:** `count()`, `min(field)`, `max(field)`, `avg(field)`, `sum(field)`
+
+**Clauses:** `where`, `group by`, `order by`, `limit`
+
+**Examples:**
+```bash
+# Count releases by individual genre
+npm run dev -- collection query 'releases count(), genre group by genre order by count desc'
+
+# Count releases by individual style (multi-value expansion: "Hard Bop, Cool Jazz" → two rows)
+npm run dev -- collection query 'releases count(), style group by style order by count desc'
+
+# Top-rated Jazz releases
+npm run dev -- collection query "releases title, artist, year where genre contains 'Jazz' and rating = 5 order by year"
+
+# Releases with BOTH styles (AND combination)
+npm run dev -- collection query "releases title where style contains 'Techno' and style contains 'Jungle'"
+
+# Tracks for an artist
+npm run dev -- collection query "tracks title, release where artist ~ 'Miles Davis' order by release"
+
+# Artists sorted by release count
+npm run dev -- collection query 'artists name, releases, genres order by releases desc'
+
+# Releases added this year
+npm run dev -- collection query "releases title, artist, added where added >= '2026-01-01' order by added desc"
+
+# JSON output
+npm run dev -- collection query 'releases title, year limit 10' --json
+```
+
+**Key behaviours:**
+- `group by` on a multi-value field (`genre`, `style`, `label`) automatically expands comma-separated values — each individual value gets its own count row
+- `where` conditions on the expanded field filter which releases are included *before* expansion
+- AND combination filtering works via multiple `where` conditions: `where style contains 'X' and style contains 'Y'`
 
 ---
 
@@ -681,7 +732,7 @@ npm test collection
 npm test -- --coverage
 ```
 
-**Current Status:** 195 tests passing ✅
+**Current Status:** 1073 tests passing ✅
 
 ---
 
@@ -696,11 +747,12 @@ discogs-manager/
 │   │   ├── discogs.ts           # Discogs API client with rate limiting & throttling
 │   │   └── soundcloud.ts        # SoundCloud API client
 │   ├── commands/
-│   │   ├── collection.ts        # `collection` command group (sync/list/stats/retry)
+│   │   ├── collection.ts        # `collection` command group (sync/list/stats/retry/query)
 │   │   ├── sync.ts              # `collection sync` handler
 │   │   ├── list.ts              # `collection list` handler
 │   │   ├── stats.ts             # `collection stats` handler
 │   │   ├── retry.ts             # `collection retry` handler
+│   │   ├── query.ts             # `collection query` handler
 │   │   ├── soundcloud.ts        # `soundcloud` command group (auth)
 │   │   ├── auth.ts              # `soundcloud auth` handler
 │   │   ├── playlist.ts          # `playlist` command group + create/update/delete/export
@@ -711,7 +763,13 @@ discogs-manager/
 │   ├── services/
 │   │   ├── collection.ts        # Collection business logic & filtering
 │   │   ├── database.ts          # SQLite database manager
-│   │   └── playlist.ts          # Playlist creation logic
+│   │   ├── playlist.ts          # Playlist creation logic
+│   │   └── query/               # Ad-hoc query pipeline
+│   │       ├── parser.ts        #   DSL tokenizer + recursive-descent parser
+│   │       ├── schema.ts        #   Entity/field definitions + AST validation
+│   │       ├── builder.ts       #   Parameterized SQL generation
+│   │       ├── executor.ts      #   Runs SQL via DatabaseManager.rawQuery()
+│   │       └── formatter.ts     #   Tabular and JSON output formatting
 │   ├── types/
 │   │   └── index.ts             # TypeScript type definitions
 │   ├── utils/

@@ -233,6 +233,7 @@ npm run dev -- playlist create --title "80s Rock Classics" --genres "Rock" --min
 | `npm run dev -- collection sync` | Download your Discogs collection |
 | `npm run dev -- collection list` | View your releases |
 | `npm run dev -- collection stats` | See collection statistics |
+| `npm run dev -- collection query '<query>'` | Ad-hoc query with the query DSL |
 | `npm run dev -- playlist create --title "My Playlist" --genres "Rock"` | Create SoundCloud playlist |
 | `npm run dev -- soundcloud auth` | Authenticate with SoundCloud |
 
@@ -316,6 +317,7 @@ Now that you're up and running:
 
 ### Advanced Features
 
+- **Collection Query DSL**: Ad-hoc filtering, grouping, and aggregation — `collection query 'releases count(), genre group by genre order by count desc'`
 - **Retry Queue**: Automatically retries failed releases
 - **Dead Letter Queue**: Tracks permanently failed items
 - **Custom Workflows**: Script multiple commands together
@@ -330,7 +332,8 @@ See [README.md](README.md) for complete documentation.
 
 Want to extend or contribute?
 
-- **[ARCHITECTURE.md](ARCHITECTURE.md)**: Detailed system architecture and extension points
+- **[development-docs/systems/](development-docs/systems/)**: System-level documentation for each subsystem
+- **[adr/](adr/)**: Architecture Decision Records
 - **[PRODUCT_OVERVIEW.md](PRODUCT_OVERVIEW.md)**: Product features and benefits
 - **[CONTRIBUTING.md](CONTRIBUTING.md)**: Contribution guidelines
 - **[API_REFERENCE.md](API_REFERENCE.md)**: API documentation for developers
