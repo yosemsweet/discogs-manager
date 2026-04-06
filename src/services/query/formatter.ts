@@ -5,15 +5,6 @@ export interface FormatOptions {
   isTTY: boolean;
 }
 
-function isNumericColumn(col: string, rows: QueryResult['rows']): boolean {
-  for (const row of rows) {
-    const val = row[col];
-    if (val !== null) return typeof val === 'number';
-  }
-  // No non-null values: treat as numeric if it looks like an aggregation result
-  return /^(count|sum|avg|min_|max_|count_|sum_|avg_)/.test(col);
-}
-
 export function formatResult(result: QueryResult, options: FormatOptions): string {
   if (options.json) {
     return JSON.stringify(result.rows, null, 2);
@@ -25,17 +16,31 @@ export function formatResult(result: QueryResult, options: FormatOptions): strin
     return columns.join('  ');
   }
 
-  // Calculate column widths: max of header length and all value lengths
+  // Single pass: compute column widths and detect numeric columns together
   const widths: number[] = columns.map(col => col.length);
+  const seenNonNull = new Set<string>();
+  const numericCols = new Set<string>();
+
   for (const row of rows) {
     columns.forEach((col, i) => {
       const val = row[col];
-      const len = val === null ? 0 : String(val).length;
-      if (len > widths[i]) widths[i] = len;
+      if (val !== null) {
+        const len = String(val).length;
+        if (len > widths[i]) widths[i] = len;
+        if (!seenNonNull.has(col)) {
+          seenNonNull.add(col);
+          if (typeof val === 'number') numericCols.add(col);
+        }
+      }
     });
   }
 
-  const numericCols = new Set(columns.filter(col => isNumericColumn(col, rows)));
+  // All-null columns that look like aggregations are numeric
+  for (const col of columns) {
+    if (!seenNonNull.has(col) && /^(count|sum|avg|min_|max_)/.test(col)) {
+      numericCols.add(col);
+    }
+  }
 
   const padCell = (val: string | number | null, width: number, numeric: boolean): string => {
     const str = val === null ? '' : String(val);
@@ -50,7 +55,6 @@ export function formatResult(result: QueryResult, options: FormatOptions): strin
     .join('  ');
   lines.push(header);
 
-  // Data rows
   for (const row of rows) {
     const line = columns
       .map((col, i) => padCell(row[col], widths[i], numericCols.has(col)))

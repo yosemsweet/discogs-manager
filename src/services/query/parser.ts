@@ -1,10 +1,8 @@
 export type AggFunc = 'count' | 'min' | 'max' | 'avg' | 'sum';
 
-export interface SelectItem {
-  type: 'field' | 'aggregation';
-  field?: string;
-  aggregation?: AggFunc;
-}
+export type SelectItem =
+  | { type: 'field'; field: string }
+  | { type: 'aggregation'; aggregation: AggFunc; field?: string };
 
 export interface Condition {
   field: string;
@@ -12,11 +10,9 @@ export interface Condition {
   value: string | number;
 }
 
-export interface OrderItem {
-  field?: string;
-  aggregation?: AggFunc;
-  direction: 'asc' | 'desc';
-}
+export type OrderItem =
+  | { type: 'field'; field: string; direction: 'asc' | 'desc' }
+  | { type: 'aggregation'; aggregation: AggFunc; direction: 'asc' | 'desc' };
 
 export interface QueryAST {
   entity: string;
@@ -327,8 +323,8 @@ class Parser {
 
       const word = this.next().value;
       const item: OrderItem = AGG_FUNCS.has(word)
-        ? { aggregation: word as AggFunc, direction: 'asc' }
-        : { field: word, direction: 'asc' };
+        ? { type: 'aggregation', aggregation: word as AggFunc, direction: 'asc' }
+        : { type: 'field', field: word, direction: 'asc' };
 
       if (this.at('WORD', 'desc')) { this.next(); item.direction = 'desc'; }
       else if (this.at('WORD', 'asc')) { this.next(); item.direction = 'asc'; }
