@@ -2,7 +2,6 @@ import { Command } from 'commander';
 import fs from 'fs';
 import path from 'path';
 import { DatabaseManager } from '../services/database';
-import { SoundCloudAPIClient } from '../api/soundcloud';
 
 /**
  * Escape a single CSV field per RFC 4180.
@@ -193,16 +192,17 @@ export function createExportCommand(db: DatabaseManager) {
 
 /**
  * Parse a playlist CSV (exported via `playlist export`) and return the
- * SoundCloud track IDs for rows where `include=yes` and `status=matched`.
+ * SoundCloud URLs for rows where `include=yes` and `status=matched`.
+ * Permalink URLs are returned as-is; callers are responsible for resolving
+ * them to track IDs (DB lookup → API /resolve fallback).
  *
  * Throws if:
  * - required columns are missing
  * - more than 500 `include=yes` rows are found
- * - any `include=yes` row has `status=unmatched` (can't include unmatched tracks)
  */
 export function parseCsvForImport(
   content: string
-): { includedTrackIds: string[]; excludedRows: Array<{ soundcloudTrackId: string; confidence: number }> } {
+): { includedUrls: string[]; excludedRows: Array<{ url: string; confidence: number }> } {
   const rows = parseCsv(content);
 
   if (rows.length === 0) {
@@ -216,8 +216,8 @@ export function parseCsvForImport(
     }
   }
 
-  const includedTrackIds: string[] = [];
-  const excludedRows: Array<{ soundcloudTrackId: string; confidence: number }> = [];
+  const includedUrls: string[] = [];
+  const excludedRows: Array<{ url: string; confidence: number }> = [];
 
   for (const row of rows) {
     const include = row['include']?.toLowerCase();
@@ -229,30 +229,25 @@ export function parseCsvForImport(
         continue;
       }
       const url = row['soundcloud_url'] || '';
-      const trackId = extractTrackIdFromUrl(url);
-      if (!trackId) {
-        throw new Error(`Could not extract SoundCloud track ID from URL: "${url}"`);
-      }
-      includedTrackIds.push(trackId);
+      if (!url) continue;
+      includedUrls.push(url);
     } else if (include === 'no' && status === 'matched') {
       const url = row['soundcloud_url'] || '';
-      const trackId = extractTrackIdFromUrl(url);
-      if (trackId) {
-        const confidence = parseFloat(row['confidence'] || '0') || 0;
-        excludedRows.push({ soundcloudTrackId: trackId, confidence });
-      }
+      if (!url) continue;
+      const confidence = parseFloat(row['confidence'] || '0') || 0;
+      excludedRows.push({ url, confidence });
     }
   }
 
-  if (includedTrackIds.length > 500) {
+  if (includedUrls.length > 500) {
     throw new Error(
-      `CSV contains ${includedTrackIds.length} rows with include=yes, ` +
+      `CSV contains ${includedUrls.length} rows with include=yes, ` +
       `but SoundCloud limits playlists to 500 tracks. ` +
-      `Please set include=no on at least ${includedTrackIds.length - 500} row(s).`
+      `Please set include=no on at least ${includedUrls.length - 500} row(s).`
     );
   }
 
-  return { includedTrackIds, excludedRows };
+  return { includedUrls, excludedRows };
 }
 
 /**

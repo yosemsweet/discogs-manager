@@ -685,6 +685,23 @@ export class DatabaseManager {
   }
 
   /**
+   * Remove playlist_releases rows for a playlist whose soundcloudTrackId is NOT in keepTrackIds.
+   * Used after updatePlaylist re-sorts and demotes tracks beyond the limit.
+   */
+  removeTracksNotInList(playlistId: string, keepTrackIds: string[]): Promise<number> {
+    return Promise.resolve().then(() => {
+      if (keepTrackIds.length === 0) {
+        return this.db.prepare(`DELETE FROM playlist_releases WHERE playlistId = ?`).run(playlistId).changes;
+      }
+      const placeholders = keepTrackIds.map(() => '?').join(',');
+      const stmt = this.db.prepare(
+        `DELETE FROM playlist_releases WHERE playlistId = ? AND soundcloudTrackId NOT IN (${placeholders})`
+      );
+      return stmt.run(playlistId, ...keepTrackIds).changes;
+    });
+  }
+
+  /**
    * Get confidence scores and metadata for a list of SoundCloud track IDs.
    * Joined with releases for addedAt tie-breaking in updatePlaylist.
    */

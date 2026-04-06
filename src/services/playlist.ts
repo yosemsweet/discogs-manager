@@ -287,6 +287,9 @@ export class PlaylistService {
       await this.db.addReleaseToPlaylist(finalPlaylistId, discogsId, trackId);
     }
 
+    // Remove demoted tracks from playlist_releases (tracks that were re-sorted out of the top N)
+    await this.db.removeTracksNotInList(finalPlaylistId, allTrackIds);
+
     // Re-save excluded tracks (replaces previous excluded set for this playlist)
     await this.saveExcludedTracks(title, excluded);
 

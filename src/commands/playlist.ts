@@ -159,7 +159,7 @@ async function runPlaylistAction(
       }
       const csvContent = fs.readFileSync(csvPath, 'utf8');
 
-      let parsed: { includedTrackIds: string[]; excludedRows: Array<{ soundcloudTrackId: string; confidence: number }> };
+      let parsed: { includedUrls: string[]; excludedRows: Array<{ url: string; confidence: number }> };
       try {
         parsed = parseCsvForImport(csvContent);
       } catch (err) {
@@ -167,9 +167,9 @@ async function runPlaylistAction(
         throw new Error(`CSV parse error: ${msg}`);
       }
 
-      // Resolve any permalink URLs that weren't in the fallback format
+      // Resolve included URLs to track IDs (handles both fallback and permalink formats)
       const resolvedTrackIds: string[] = [];
-      for (const rawUrl of parsed.includedTrackIds) {
+      for (const rawUrl of parsed.includedUrls) {
         const directId = extractTrackIdFromUrl(rawUrl);
         if (directId) {
           resolvedTrackIds.push(directId);
@@ -195,6 +195,28 @@ async function runPlaylistAction(
         throw new Error('No includable tracks found in CSV (no rows with include=yes and status=matched)');
       }
 
+      // Resolve excluded URLs to track IDs, then look up Discogs metadata from track_matches
+      const excludedUrlToTrackId = new Map<string, string>();
+      for (const excludedRow of parsed.excludedRows) {
+        const rawUrl = excludedRow.url;
+        const directId = extractTrackIdFromUrl(rawUrl);
+        if (directId) {
+          excludedUrlToTrackId.set(rawUrl, directId);
+          continue;
+        }
+        const dbId = await db.getTrackIdByPermalinkUrl(rawUrl);
+        if (dbId) {
+          excludedUrlToTrackId.set(rawUrl, dbId);
+        }
+        // If unresolvable, skip — excluded metadata is non-critical
+      }
+
+      const resolvedExcludedIds = Array.from(excludedUrlToTrackId.values());
+      const excludedMatchRows = resolvedExcludedIds.length > 0
+        ? await db.getMatchConfidenceByTrackIds(resolvedExcludedIds)
+        : [];
+      const excludedMatchMap = new Map(excludedMatchRows.map(r => [r.soundcloudTrackId, r]));
+
       // Create or update the SoundCloud playlist
       spinner.text = `Syncing "${validated.title}" from CSV...`;
       const existingPlaylist = await db.getPlaylistByTitle(validated.title);
@@ -216,15 +238,25 @@ async function runPlaylistAction(
         created = true;
       }
 
-      // Save excluded tracks from CSV
+      // Save excluded tracks from CSV with real Discogs metadata
       await db.deleteExcludedTracks(validated.title);
       if (parsed.excludedRows.length > 0) {
-        await db.saveExcludedTracks(validated.title, parsed.excludedRows.map(r => ({
-          discogsReleaseId: 0,
-          discogsTrackTitle: '',
-          soundcloudTrackId: r.soundcloudTrackId,
-          confidence: r.confidence,
-        })));
+        const excludedRecords = parsed.excludedRows
+          .map(r => {
+            const trackId = excludedUrlToTrackId.get(r.url);
+            if (!trackId) return null;
+            const match = excludedMatchMap.get(trackId);
+            return {
+              discogsReleaseId: match?.discogsReleaseId ?? 0,
+              discogsTrackTitle: match?.discogsTrackTitle ?? '',
+              soundcloudTrackId: trackId,
+              confidence: r.confidence,
+            };
+          })
+          .filter((r): r is NonNullable<typeof r> => r !== null);
+        if (excludedRecords.length > 0) {
+          await db.saveExcludedTracks(validated.title, excludedRecords);
+        }
       }
 
       const action = created ? 'Created' : 'Updated';

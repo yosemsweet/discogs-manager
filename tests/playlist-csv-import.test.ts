@@ -63,13 +63,24 @@ describe('parseCsvForImport', () => {
     return lines.join('\n') + '\n';
   }
 
-  test('extracts included matched tracks', () => {
+  test('extracts included matched track URLs', () => {
     const csv = buildPlaylistCsv([
       { soundcloud_url: 'https://soundcloud.com/tracks/111', status: 'matched', include: 'yes' },
       { soundcloud_url: 'https://soundcloud.com/tracks/222', status: 'matched', include: 'yes' },
     ]);
-    const { includedTrackIds } = parseCsvForImport(csv);
-    expect(includedTrackIds).toEqual(['111', '222']);
+    const { includedUrls } = parseCsvForImport(csv);
+    expect(includedUrls).toEqual([
+      'https://soundcloud.com/tracks/111',
+      'https://soundcloud.com/tracks/222',
+    ]);
+  });
+
+  test('returns permalink URLs as-is (resolution is caller responsibility)', () => {
+    const csv = buildPlaylistCsv([
+      { soundcloud_url: 'https://soundcloud.com/artist/track-title', status: 'matched', include: 'yes' },
+    ]);
+    const { includedUrls } = parseCsvForImport(csv);
+    expect(includedUrls).toEqual(['https://soundcloud.com/artist/track-title']);
   });
 
   test('ignores include=yes on unmatched rows', () => {
@@ -77,8 +88,8 @@ describe('parseCsvForImport', () => {
       { soundcloud_url: 'https://soundcloud.com/tracks/111', status: 'matched', include: 'yes' },
       { soundcloud_url: '', status: 'unmatched', include: 'yes' },
     ]);
-    const { includedTrackIds } = parseCsvForImport(csv);
-    expect(includedTrackIds).toEqual(['111']);
+    const { includedUrls } = parseCsvForImport(csv);
+    expect(includedUrls).toEqual(['https://soundcloud.com/tracks/111']);
   });
 
   test('include=no matched rows go to excludedRows', () => {
@@ -86,10 +97,10 @@ describe('parseCsvForImport', () => {
       { soundcloud_url: 'https://soundcloud.com/tracks/111', status: 'matched', include: 'yes' },
       { soundcloud_url: 'https://soundcloud.com/tracks/999', status: 'matched', include: 'no', confidence: '0.55' },
     ]);
-    const { includedTrackIds, excludedRows } = parseCsvForImport(csv);
-    expect(includedTrackIds).toEqual(['111']);
+    const { includedUrls, excludedRows } = parseCsvForImport(csv);
+    expect(includedUrls).toEqual(['https://soundcloud.com/tracks/111']);
     expect(excludedRows).toHaveLength(1);
-    expect(excludedRows[0].soundcloudTrackId).toBe('999');
+    expect(excludedRows[0].url).toBe('https://soundcloud.com/tracks/999');
     expect(excludedRows[0].confidence).toBe(0.55);
   });
 
@@ -117,8 +128,8 @@ describe('parseCsvForImport', () => {
     const csv = buildPlaylistCsv([
       { soundcloud_url: '', status: 'unmatched', include: '' },
     ]);
-    const { includedTrackIds, excludedRows } = parseCsvForImport(csv);
-    expect(includedTrackIds).toHaveLength(0);
+    const { includedUrls, excludedRows } = parseCsvForImport(csv);
+    expect(includedUrls).toHaveLength(0);
     expect(excludedRows).toHaveLength(0);
   });
 
@@ -129,7 +140,7 @@ describe('parseCsvForImport', () => {
       include: 'yes',
     }));
     const csv = buildPlaylistCsv(rows);
-    const { includedTrackIds } = parseCsvForImport(csv);
-    expect(includedTrackIds).toHaveLength(500);
+    const { includedUrls } = parseCsvForImport(csv);
+    expect(includedUrls).toHaveLength(500);
   });
 });
