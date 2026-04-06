@@ -1,415 +1,213 @@
-import { QueryBuilder, CommonQueries, TransactionManager } from '../src/utils/query-builder';
-import Database from 'better-sqlite3';
-import path from 'path';
+import { parseQuery } from '../src/services/query/parser';
+import { validateAST } from '../src/services/query/schema';
+import { buildQuery } from '../src/services/query/builder';
 
-describe('QueryBuilder', () => {
-    let builder: QueryBuilder;
+function build(query: string) {
+  const ast = parseQuery(query);
+  validateAST(ast);
+  return buildQuery(ast);
+}
 
-    beforeEach(() => {
-        builder = new QueryBuilder();
+describe('buildQuery', () => {
+  // ---------------------------------------------------------------------------
+  // Basic SELECT generation
+  // ---------------------------------------------------------------------------
+  describe('SELECT', () => {
+    test('default select for releases includes expected columns', () => {
+      const { sql, columns } = build('releases');
+      expect(columns).toContain('title');
+      expect(columns).toContain('artist');
+      expect(columns).toContain('year');
+      expect(sql).toContain('r.title AS title');
+      expect(sql).toContain('FROM releases r');
     });
 
-    describe('basic SELECT', () => {
-        test('builds simple SELECT * query', () => {
-            const { sql, params } = builder.select(['*']).from('users').build();
-
-            expect(sql).toBe('SELECT * FROM users');
-            expect(params).toEqual([]);
-        });
-
-        test('builds SELECT with specific columns', () => {
-            const { sql, params } = builder.select(['id', 'name', 'email']).from('users').build();
-
-            expect(sql).toBe('SELECT id, name, email FROM users');
-            expect(params).toEqual([]);
-        });
-
-        test('throws error if FROM not specified', () => {
-            expect(() => builder.select(['*']).build()).toThrow('FROM table must be specified');
-        });
+    test('explicit field selection', () => {
+      const { sql, columns } = build('releases title, year');
+      expect(columns).toEqual(['title', 'year']);
+      expect(sql).toContain('r.title AS title');
+      expect(sql).toContain('r.year AS year');
     });
 
-    describe('WHERE clauses', () => {
-        test('builds query with WHERE condition', () => {
-            const { sql, params } = builder
-                .select(['*'])
-                .from('users')
-                .where('id = ?', [1])
-                .build();
-
-            expect(sql).toBe('SELECT * FROM users WHERE id = ?');
-            expect(params).toEqual([1]);
-        });
-
-        test('builds query with multiple AND WHERE', () => {
-            const { sql, params } = builder
-                .select(['*'])
-                .from('users')
-                .where('id = ?', [1])
-                .andWhere('status = ?', ['active'])
-                .build();
-
-            expect(sql).toBe('SELECT * FROM users WHERE id = ? AND status = ?');
-            expect(params).toEqual([1, 'active']);
-        });
-
-        test('builds query with OR WHERE', () => {
-            const { sql, params } = builder
-                .select(['*'])
-                .from('users')
-                .where('status = ?', ['active'])
-                .orWhere('status = ?', ['pending'])
-                .build();
-
-            expect(sql).toContain('OR');
-            expect(params).toEqual(['active', 'pending']);
-        });
-
-        test('WHERE without params', () => {
-            const { sql, params } = builder
-                .select(['*'])
-                .from('users')
-                .where('deleted_at IS NULL')
-                .build();
-
-            expect(sql).toBe('SELECT * FROM users WHERE deleted_at IS NULL');
-            expect(params).toEqual([]);
-        });
+    test('tracks join with releases', () => {
+      const { sql } = build('tracks title, release');
+      expect(sql).toContain('tracks t JOIN releases r ON t.releaseId = r.discogsId');
+      expect(sql).toContain('t.title AS title');
+      expect(sql).toContain('r.title AS release');
     });
 
-    describe('ORDER BY', () => {
-        test('builds with single ORDER BY ASC', () => {
-            const { sql } = builder
-                .select(['*'])
-                .from('users')
-                .orderBy('name', 'ASC')
-                .build();
-
-            expect(sql).toBe('SELECT * FROM users ORDER BY name ASC');
-        });
-
-        test('builds with ORDER BY DESC', () => {
-            const { sql } = builder
-                .select(['*'])
-                .from('users')
-                .orderBy('created_at', 'DESC')
-                .build();
-
-            expect(sql).toBe('SELECT * FROM users ORDER BY created_at DESC');
-        });
-
-        test('builds with multiple ORDER BY', () => {
-            const { sql } = builder
-                .select(['*'])
-                .from('users')
-                .orderBy('status', 'ASC')
-                .orderBy('created_at', 'DESC')
-                .build();
-
-            expect(sql).toBe('SELECT * FROM users ORDER BY status ASC, created_at DESC');
-        });
-
-        test('defaults ORDER BY direction to ASC', () => {
-            const { sql } = builder.select(['*']).from('users').orderBy('name').build();
-
-            expect(sql).toBe('SELECT * FROM users ORDER BY name ASC');
-        });
+    test('tracks artist uses COALESCE with NULLIF for empty string', () => {
+      const { sql } = build('tracks artist');
+      expect(sql).toContain('COALESCE(NULLIF(t.artists, \'\'), r.artists) AS artist');
     });
 
-    describe('LIMIT and OFFSET', () => {
-        test('builds with LIMIT only', () => {
-            const { sql } = builder.select(['*']).from('users').limit(10).build();
+    test('date field uses date() function', () => {
+      const { sql } = build('releases added');
+      expect(sql).toContain('date(r.addedAt) AS added');
+    });
+  });
 
-            expect(sql).toBe('SELECT * FROM users LIMIT 10');
-        });
-
-        test('builds with OFFSET only', () => {
-            const { sql } = builder.select(['*']).from('users').offset(20).build();
-
-            expect(sql).toBe('SELECT * FROM users OFFSET 20');
-        });
-
-        test('builds with LIMIT and OFFSET', () => {
-            const { sql } = builder.select(['*']).from('users').limit(10).offset(20).build();
-
-            expect(sql).toBe('SELECT * FROM users LIMIT 10 OFFSET 20');
-        });
+  // ---------------------------------------------------------------------------
+  // WHERE generation
+  // ---------------------------------------------------------------------------
+  describe('WHERE', () => {
+    test('contains on genre produces 4-condition match', () => {
+      const { sql, params } = build("releases where genre contains 'Jazz'");
+      expect(sql).toContain('WHERE');
+      expect(sql).toContain('r.genres = ?');
+      expect(sql).toContain('r.genres LIKE ?');
+      expect(params).toContain('Jazz');
+      expect(params).toContain('Jazz,%');
+      expect(params).toContain('%, Jazz');
+      expect(params).toContain('%, Jazz,%');
     });
 
-    describe('complex queries', () => {
-        test('builds complex multi-condition query', () => {
-            const { sql, params } = builder
-                .select(['id', 'name', 'email'])
-                .from('users')
-                .where('status = ?', ['active'])
-                .andWhere('role = ?', ['admin'])
-                .andWhere('created_at > ?', ['2023-01-01'])
-                .orderBy('created_at', 'DESC')
-                .limit(50)
-                .build();
-
-            expect(sql).toContain('SELECT id, name, email FROM users');
-            expect(sql).toContain('WHERE');
-            expect(sql).toContain('ORDER BY created_at DESC');
-            expect(sql).toContain('LIMIT 50');
-            expect(params).toEqual(['active', 'admin', '2023-01-01']);
-        });
-
-        test('pagination query', () => {
-            const { sql, params } = builder
-                .select(['*'])
-                .from('products')
-                .where('category = ?', ['electronics'])
-                .orderBy('price', 'ASC')
-                .limit(20)
-                .offset(40)
-                .build();
-
-            expect(sql).toContain('LIMIT 20 OFFSET 40');
-            expect(params).toEqual(['electronics']);
-        });
+    test('~ produces case-insensitive LIKE', () => {
+      const { sql, params } = build("releases where artist ~ 'miles'");
+      expect(sql).toContain('LIKE ? COLLATE NOCASE');
+      expect(params).toContain('%miles%');
     });
 
-    describe('reset', () => {
-        test('resets builder to initial state', () => {
-            builder.select(['id', 'name']).from('users').where('id = ?', [1]).limit(10);
-
-            builder.reset();
-
-            expect(() => builder.build()).toThrow('FROM table must be specified');
-        });
-
-        test('allows reuse after reset', () => {
-            builder.select(['*']).from('users').limit(10);
-            builder.reset();
-
-            const { sql } = builder.select(['id']).from('products').build();
-
-            expect(sql).toBe('SELECT id FROM products');
-        });
-    });
-});
-
-describe('CommonQueries', () => {
-    test('selectAll', () => {
-        const { sql, params } = CommonQueries.selectAll('users');
-
-        expect(sql).toBe('SELECT * FROM users');
-        expect(params).toEqual([]);
+    test('numeric comparison', () => {
+      const { sql, params } = build('releases where year >= 1960');
+      expect(sql).toContain('r.year >= ?');
+      expect(params).toContain(1960);
     });
 
-    test('selectWhere', () => {
-        const { sql, params } = CommonQueries.selectWhere('users', 'id', 5);
-
-        expect(sql).toBe('SELECT * FROM users WHERE id = ?');
-        expect(params).toEqual([5]);
+    test('multiple conditions joined with AND', () => {
+      const { sql } = build('releases where year >= 1960 and year <= 1969');
+      expect(sql).toContain('AND');
     });
 
-    test('selectLimit', () => {
-        const { sql, params } = CommonQueries.selectLimit('users', 10, 'created_at', 'DESC');
+    test('= comparison', () => {
+      const { sql, params } = build('releases where rating = 5');
+      expect(sql).toContain('r.rating = ?');
+      expect(params).toContain(5);
+    });
+  });
 
-        expect(sql).toContain('LIMIT 10');
-        expect(sql).toContain('ORDER BY created_at DESC');
-        expect(params).toEqual([]);
+  // ---------------------------------------------------------------------------
+  // Aggregation
+  // ---------------------------------------------------------------------------
+  describe('aggregation', () => {
+    test('count() produces COUNT(*)', () => {
+      const { sql, columns } = build('releases count() group by style');
+      expect(sql).toContain('COUNT(*) AS count');
+      expect(columns).toContain('count');
     });
 
-    test('count', () => {
-        const { sql, params } = CommonQueries.count('users');
-
-        expect(sql).toBe('SELECT COUNT(*) as count FROM users');
-        expect(params).toEqual([]);
+    test('min(year) produces MIN', () => {
+      const { sql, columns } = build('releases min(year), max(year)');
+      expect(sql).toContain('MIN(r.year) AS min_year');
+      expect(sql).toContain('MAX(r.year) AS max_year');
+      expect(columns).toEqual(['min_year', 'max_year']);
     });
 
-    test('countWhere', () => {
-        const { sql, params } = CommonQueries.countWhere('users', 'status', 'active');
-
-        expect(sql).toBe('SELECT COUNT(*) as count FROM users WHERE status = ?');
-        expect(params).toEqual(['active']);
+    test('avg(rating) produces AVG', () => {
+      const { sql } = build('releases avg(rating), genre group by genre');
+      expect(sql).toContain('AVG(r.rating) AS avg_rating');
     });
 
-    test('paginate', () => {
-        const { sql, params } = CommonQueries.paginate('users', 2, 25, 'name', 'ASC');
-
-        expect(sql).toContain('LIMIT 25 OFFSET 25');
-        expect(sql).toContain('ORDER BY name ASC');
-        expect(params).toEqual([]);
+    test('group by generates GROUP BY clause', () => {
+      const { sql } = build('releases count(), style group by style');
+      expect(sql).toContain('GROUP BY r.styles');
     });
 
-    test('search', () => {
-        const { sql, params } = CommonQueries.search('users', 'name', 'john', 50);
+    test('group by date field uses date() expression', () => {
+      const { sql } = build('releases count(), added group by added');
+      expect(sql).toContain('GROUP BY date(r.addedAt)');
+    });
+  });
 
-        expect(sql).toContain('LIKE ?');
-        expect(sql).toContain('LIMIT 50');
-        expect(params).toEqual(['%john%']);
+  // ---------------------------------------------------------------------------
+  // ORDER BY
+  // ---------------------------------------------------------------------------
+  describe('ORDER BY', () => {
+    test('order by field ascending', () => {
+      const { sql } = build('releases order by year asc');
+      expect(sql).toContain('ORDER BY r.year ASC');
     });
 
-    test('paginate first page', () => {
-        const { sql } = CommonQueries.paginate('users', 1, 10);
-
-        expect(sql).toContain('OFFSET 0');
+    test('order by field descending', () => {
+      const { sql } = build('releases order by year desc');
+      expect(sql).toContain('ORDER BY r.year DESC');
     });
 
-    test('paginate last page offset calculation', () => {
-        const { sql } = CommonQueries.paginate('users', 5, 20);
-
-        expect(sql).toContain('OFFSET 80');
-    });
-});
-
-describe('TransactionManager', () => {
-    let db: Database.Database;
-    let manager: TransactionManager;
-
-    beforeEach(() => {
-        db = new Database(':memory:');
-        db.exec(`
-      CREATE TABLE users (
-        id INTEGER PRIMARY KEY,
-        name TEXT NOT NULL,
-        balance INTEGER DEFAULT 0
-      );
-      INSERT INTO users (name, balance) VALUES ('Alice', 100);
-      INSERT INTO users (name, balance) VALUES ('Bob', 50);
-    `);
-        manager = new TransactionManager(db);
+    test('order by aggregation alias', () => {
+      const { sql } = build('releases count(), style group by style order by count desc');
+      expect(sql).toContain('ORDER BY count DESC');
     });
 
-    afterEach(() => {
-        db.close();
+    test('default order by applied when none specified', () => {
+      const { sql } = build('releases');
+      expect(sql).toContain('ORDER BY');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // LIMIT
+  // ---------------------------------------------------------------------------
+  describe('LIMIT', () => {
+    test('generates LIMIT clause', () => {
+      const { sql } = build('releases limit 10');
+      expect(sql).toContain('LIMIT 10');
     });
 
-    test('executes transaction successfully', () => {
-        const result = manager.transaction(() => {
-            db.prepare('UPDATE users SET balance = balance - 10 WHERE name = ?').run('Alice');
-            db.prepare('UPDATE users SET balance = balance + 10 WHERE name = ?').run('Bob');
-            return 'success';
-        });
+    test('no LIMIT clause when not specified', () => {
+      const { sql } = build('releases title');
+      expect(sql).not.toContain('LIMIT');
+    });
+  });
 
-        expect(result).toBe('success');
-
-        const alice = db.prepare('SELECT balance FROM users WHERE name = ?').get('Alice') as any;
-        const bob = db.prepare('SELECT balance FROM users WHERE name = ?').get('Bob') as any;
-
-        expect(alice.balance).toBe(90);
-        expect(bob.balance).toBe(60);
+  // ---------------------------------------------------------------------------
+  // Artists CTE
+  // ---------------------------------------------------------------------------
+  describe('artists entity', () => {
+    test('generates recursive CTE', () => {
+      const { sql } = build('artists');
+      expect(sql).toContain('WITH RECURSIVE artist_split');
+      expect(sql).toContain('artist_data');
+      expect(sql).toContain('COUNT(DISTINCT release_id) AS releases');
     });
 
-    test('rolls back on error', () => {
-        const initialAlice = db.prepare('SELECT balance FROM users WHERE name = ?').get('Alice') as any;
-
-        try {
-            manager.transaction(() => {
-                db.prepare('UPDATE users SET balance = balance - 50 WHERE name = ?').run('Alice');
-                throw new Error('Simulated error');
-            });
-        } catch (e) {
-            // Expected error
-        }
-
-        const currentAlice = db.prepare('SELECT balance FROM users WHERE name = ?').get('Alice') as any;
-
-        expect(currentAlice.balance).toBe(initialAlice.balance);
+    test('selects from artist_data', () => {
+      const { sql } = build('artists');
+      expect(sql).toContain('FROM artist_data');
     });
 
-    test('batch executes multiple statements', () => {
-        manager.batch([
-            { sql: 'UPDATE users SET balance = 200 WHERE name = ?', params: ['Alice'] },
-            { sql: 'UPDATE users SET balance = 150 WHERE name = ?', params: ['Bob'] },
-        ]);
-
-        const alice = db.prepare('SELECT balance FROM users WHERE name = ?').get('Alice') as any;
-        const bob = db.prepare('SELECT balance FROM users WHERE name = ?').get('Bob') as any;
-
-        expect(alice.balance).toBe(200);
-        expect(bob.balance).toBe(150);
+    test('artists contains on genres uses LIKE', () => {
+      const { sql, params } = build("artists where genres contains 'Jazz'");
+      expect(sql).toContain('LIKE ?');
+      expect(params).toContain('%Jazz%');
     });
 
-    test('batch rolls back all on single error', () => {
-        const initialAlice = db.prepare('SELECT balance FROM users WHERE name = ?').get('Alice') as any;
-        const initialBob = db.prepare('SELECT balance FROM users WHERE name = ?').get('Bob') as any;
-
-        try {
-            manager.batch([
-                { sql: 'UPDATE users SET balance = 200 WHERE name = ?', params: ['Alice'] },
-                { sql: 'INVALID SQL', params: [] }, // This will cause error
-            ]);
-        } catch (e) {
-            // Expected error
-        }
-
-        const currentAlice = db.prepare('SELECT balance FROM users WHERE name = ?').get('Alice') as any;
-        const currentBob = db.prepare('SELECT balance FROM users WHERE name = ?').get('Bob') as any;
-
-        // Both should be unchanged due to rollback
-        expect(currentAlice.balance).toBe(initialAlice.balance);
-        expect(currentBob.balance).toBe(initialBob.balance);
+    test('artists name filter', () => {
+      const { sql, params } = build("artists where name ~ 'miles'");
+      expect(sql).toContain('name LIKE ? COLLATE NOCASE');
+      expect(params).toContain('%miles%');
     });
-});
+  });
 
-describe('QueryBuilder with database', () => {
-    let db: Database.Database;
-
-    beforeEach(() => {
-        db = new Database(':memory:');
-        db.exec(`
-      CREATE TABLE products (
-        id INTEGER PRIMARY KEY,
-        name TEXT NOT NULL,
-        category TEXT,
-        price REAL,
-        stock INTEGER
-      );
-      INSERT INTO products (name, category, price, stock) VALUES ('Laptop', 'electronics', 999.99, 5);
-      INSERT INTO products (name, category, price, stock) VALUES ('Mouse', 'electronics', 29.99, 50);
-      INSERT INTO products (name, category, price, stock) VALUES ('Desk', 'furniture', 299.99, 10);
-      INSERT INTO products (name, category, price, stock) VALUES ('Chair', 'furniture', 199.99, 15);
-    `);
+  // ---------------------------------------------------------------------------
+  // Parameter safety
+  // ---------------------------------------------------------------------------
+  describe('parameter safety', () => {
+    test('user string values are in params, not SQL string', () => {
+      const { sql, params } = build("releases where artist = 'Miles Davis'");
+      expect(sql).not.toContain('Miles Davis');
+      expect(params).toContain('Miles Davis');
     });
 
-    afterEach(() => {
-        db.close();
+    test('numeric values are in params', () => {
+      const { sql, params } = build('releases where year = 1959');
+      expect(sql).not.toContain('1959');
+      expect(params).toContain(1959);
     });
 
-    test('query with QueryBuilder results', () => {
-        const query = new QueryBuilder()
-            .select(['name', 'price'])
-            .from('products')
-            .where('category = ?', ['electronics'])
-            .orderBy('price', 'DESC')
-            .build();
-
-        const stmt = db.prepare(query.sql);
-        const results = stmt.all(...query.params) as any[];
-
-        expect(results.length).toBe(2);
-        expect(results[0].name).toBe('Laptop');
-        expect(results[1].name).toBe('Mouse');
+    test('contains values are in params', () => {
+      const { sql, params } = build("releases where genre contains 'Jazz'");
+      expect(sql).not.toContain("'Jazz'");
+      expect(params.every(p => typeof p === 'string' || typeof p === 'number')).toBe(true);
     });
-
-    test('pagination with real data', () => {
-        const query = CommonQueries.paginate('products', 1, 2, 'price', 'ASC');
-        const stmt = db.prepare(query.sql);
-        const results = stmt.all(...query.params) as any[];
-
-        expect(results.length).toBe(2);
-        expect(results[0].name).toBe('Mouse');
-        expect(results[1].name).toBe('Chair');
-    });
-
-    test('search with real data', () => {
-        const query = CommonQueries.search('products', 'name', 'Chair', 10);
-        const stmt = db.prepare(query.sql);
-        const results = stmt.all(...query.params) as any[];
-
-        expect(results.length).toBe(1);
-        expect(results[0].name).toBe('Chair');
-    });
-
-    test('count with real data', () => {
-        const query = CommonQueries.countWhere('products', 'category', 'electronics');
-        const stmt = db.prepare(query.sql);
-        const result = stmt.get(...query.params) as any;
-
-        expect(result.count).toBe(2);
-    });
+  });
 });

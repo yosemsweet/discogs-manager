@@ -601,6 +601,17 @@ export class DatabaseManager {
     });
   }
 
+  /**
+   * Execute a raw parameterized SELECT query. Used exclusively by the collection
+   * query system, which generates all SQL through the query builder (never raw user input).
+   */
+  rawQuery(sql: string, params: (string | number)[]): Promise<Record<string, unknown>[]> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(sql);
+      return (stmt.all(...params) as Record<string, unknown>[]) || [];
+    });
+  }
+
   close(): Promise<void> {
     return Promise.resolve().then(() => {
       try {

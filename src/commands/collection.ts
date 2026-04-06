@@ -5,6 +5,7 @@ import { createSyncCommand } from './sync';
 import { createListCommand } from './list';
 import { createStatsCommand } from './stats';
 import { createRetryCommand } from './retry';
+import { createQueryCommand } from './query';
 
 export function createCollectionCommand(
   discogsClient: DiscogsAPIClient,
@@ -18,6 +19,7 @@ export function createCollectionCommand(
   cmd.addCommand(createListCommand(discogsClient, db));
   cmd.addCommand(createStatsCommand(discogsClient, db));
   cmd.addCommand(createRetryCommand(db));
+  cmd.addCommand(createQueryCommand(db));
 
   return cmd;
 }
