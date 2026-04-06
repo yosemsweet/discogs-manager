@@ -17,14 +17,13 @@ const AGG_SQL: Record<AggFunc, (col: string) => string> = {
 
 function buildSelectExpression(item: SelectItem, entity: string): { expr: string; alias: string } {
   if (item.type === 'aggregation') {
-    const agg = item.aggregation!;
     const col = item.field ? getField(entity, item.field).column : '';
-    const expr = AGG_SQL[agg](col);
-    const alias = item.field ? `${agg}_${item.field}` : agg;
+    const expr = AGG_SQL[item.aggregation](col);
+    const alias = item.field ? `${item.aggregation}_${item.field}` : item.aggregation;
     return { expr, alias };
   }
-  const fieldDef = getField(entity, item.field!);
-  return { expr: fieldDef.column, alias: item.field! };
+  const fieldDef = getField(entity, item.field);
+  return { expr: fieldDef.column, alias: item.field };
 }
 
 function buildContainsCondition(column: string, value: string, isVirtual: boolean): { sql: string; params: string[] } {
@@ -83,8 +82,7 @@ function buildOrderByClause(
   const parts: string[] = [];
   for (const item of items) {
     const dir = item.direction.toUpperCase();
-    if (item.aggregation) {
-      // Find matching agg in select
+    if (item.type === 'aggregation') {
       const matching = selectItems.find(
         s => s.type === 'aggregation' && s.aggregation === item.aggregation
       );
@@ -92,17 +90,11 @@ function buildOrderByClause(
         const { alias } = buildSelectExpression(matching, entity);
         parts.push(`${alias} ${dir}`);
       } else {
-        const col = AGG_SQL[item.aggregation]('');
-        parts.push(`${col} ${dir}`);
+        parts.push(`${AGG_SQL[item.aggregation]('')} ${dir}`);
       }
-    } else if (item.field) {
-      try {
-        const fieldDef = getField(entity, item.field);
-        parts.push(`${fieldDef.column} ${dir}`);
-      } catch {
-        // For virtual entity fields that map directly
-        parts.push(`${item.field} ${dir}`);
-      }
+    } else {
+      const fieldDef = getField(entity, item.field);
+      parts.push(`${fieldDef.column} ${dir}`);
     }
   }
 
@@ -183,7 +175,7 @@ export function buildQuery(ast: QueryAST): BuiltQuery {
     ast.orderBy,
     ast.entity,
     selectItems,
-    entity.defaultOrderBy as OrderItem[]
+    entity.defaultOrderBy
   );
 
   // Build LIMIT clause

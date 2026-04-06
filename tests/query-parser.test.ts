@@ -57,7 +57,8 @@ describe('parseQuery', () => {
       for (const fn of ['count', 'min', 'max', 'avg', 'sum']) {
         const ast = parseQuery(`releases ${fn}(year)`);
         expect(ast.select[0].type).toBe('aggregation');
-        expect(ast.select[0].aggregation).toBe(fn);
+        const item = ast.select[0] as Extract<typeof ast.select[0], { type: 'aggregation' }>;
+        expect(item.aggregation).toBe(fn);
       }
     });
 
@@ -164,7 +165,7 @@ describe('parseQuery', () => {
   describe('order by', () => {
     test('parses field with default asc direction', () => {
       const ast = parseQuery('releases order by year');
-      expect(ast.orderBy).toEqual([{ field: 'year', direction: 'asc' }]);
+      expect(ast.orderBy).toEqual([{ type: 'field', field: 'year', direction: 'asc' }]);
     });
 
     test('parses field with explicit desc', () => {
@@ -179,14 +180,14 @@ describe('parseQuery', () => {
 
     test('parses aggregation function in order by', () => {
       const ast = parseQuery('releases count() group by style order by count desc');
-      expect(ast.orderBy[0]).toEqual({ aggregation: 'count', direction: 'desc' });
+      expect(ast.orderBy[0]).toEqual({ type: 'aggregation', aggregation: 'count', direction: 'desc' });
     });
 
     test('parses multiple order by items', () => {
       const ast = parseQuery('releases order by year desc, title asc');
       expect(ast.orderBy).toHaveLength(2);
-      expect(ast.orderBy[0]).toEqual({ field: 'year', direction: 'desc' });
-      expect(ast.orderBy[1]).toEqual({ field: 'title', direction: 'asc' });
+      expect(ast.orderBy[0]).toEqual({ type: 'field', field: 'year', direction: 'desc' });
+      expect(ast.orderBy[1]).toEqual({ type: 'field', field: 'title', direction: 'asc' });
     });
 
     test('throws on missing field after order by', () => {

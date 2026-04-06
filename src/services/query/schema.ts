@@ -1,4 +1,4 @@
-import { QueryAST, SelectItem, Condition, AggFunc } from './parser';
+import { QueryAST, SelectItem, Condition, AggFunc, OrderItem } from './parser';
 
 export type FieldType = 'text' | 'number' | 'date' | 'multi_text';
 
@@ -14,7 +14,7 @@ export interface EntityDefinition {
   fromClause: string;
   fields: FieldDefinition[];
   defaultSelect: string[];
-  defaultOrderBy: Array<{ field?: string; aggregation?: AggFunc; direction: 'asc' | 'desc' }>;
+  defaultOrderBy: OrderItem[];
   isVirtual?: boolean;
 }
 
@@ -48,7 +48,7 @@ const ENTITIES: Record<string, EntityDefinition> = {
       { name: 'added',  type: 'date',        column: 'date(r.addedAt)', description: 'Date added to collection' },
     ],
     defaultSelect: ['title', 'artist', 'year', 'genre', 'style', 'rating', 'added'],
-    defaultOrderBy: [{ field: 'added', direction: 'desc' }],
+    defaultOrderBy: [{ type: 'field', field: 'added', direction: 'desc' }],
   },
 
   tracks: {
@@ -67,7 +67,7 @@ const ENTITIES: Record<string, EntityDefinition> = {
       { name: 'added',    type: 'date',      column: 'date(r.addedAt)',                description: 'Date release was added' },
     ],
     defaultSelect: ['title', 'artist', 'release', 'year', 'genre', 'style'],
-    defaultOrderBy: [{ field: 'release', direction: 'asc' }, { field: 'position', direction: 'asc' }],
+    defaultOrderBy: [{ type: 'field', field: 'release', direction: 'asc' }, { type: 'field', field: 'position', direction: 'asc' }],
   },
 
   artists: {
@@ -81,7 +81,7 @@ const ENTITIES: Record<string, EntityDefinition> = {
       { name: 'styles',   type: 'multi_text', column: 'styles',   description: 'All styles across releases' },
     ],
     defaultSelect: ['name', 'releases', 'genres', 'styles'],
-    defaultOrderBy: [{ field: 'releases', direction: 'desc' }],
+    defaultOrderBy: [{ type: 'field', field: 'releases', direction: 'desc' }],
   },
 };
 
@@ -123,21 +123,19 @@ export function getField(entityName: string, fieldName: string): FieldDefinition
 }
 
 export function validateAST(ast: QueryAST): void {
-  // Validate entity
-  const entity = getEntityDefinition(ast.entity);
+  getEntityDefinition(ast.entity);
 
-  // Collect all referenced field names for validation
   const allFields = (items: SelectItem[]): string[] =>
-    items.filter(i => i.type === 'field' && i.field).map(i => i.field!);
+    items.filter((i): i is Extract<SelectItem, { type: 'field' }> => i.type === 'field').map(i => i.field);
 
   // Validate select fields
   for (const item of ast.select) {
-    if (item.type === 'field' && item.field) {
+    if (item.type === 'field') {
       getField(ast.entity, item.field);
     }
     if (item.type === 'aggregation' && item.field) {
       const f = getField(ast.entity, item.field);
-      if (item.aggregation && AGG_NUMERIC_ONLY.has(item.aggregation) && f.type !== 'number') {
+      if (AGG_NUMERIC_ONLY.has(item.aggregation) && f.type !== 'number') {
         throw new SchemaValidationError(
           `'${item.aggregation}' requires a numeric field, but '${item.field}' is type '${f.type}'`,
           ast.entity,
@@ -176,7 +174,7 @@ export function validateAST(ast: QueryAST): void {
 
   // Validate order by fields
   for (const item of ast.orderBy) {
-    if (item.field) getField(ast.entity, item.field);
+    if (item.type === 'field') getField(ast.entity, item.field);
   }
 
   // Aggregation consistency: if any select item is an aggregation,
@@ -196,7 +194,4 @@ export function validateAST(ast: QueryAST): void {
       }
     }
   }
-
-  // Suppress unused variable warning
-  void entity;
 }

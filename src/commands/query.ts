@@ -14,7 +14,6 @@ export function createQueryCommand(db: DatabaseManager): Command {
     .option('--limit <n>', 'Override the maximum number of rows returned');
 
   cmd.action(async (queryStr: string, options) => {
-    // Parse
     let ast;
     try {
       ast = parseQuery(queryStr);
@@ -30,13 +29,11 @@ export function createQueryCommand(db: DatabaseManager): Command {
       process.exit(1);
     }
 
-    // Apply CLI limit override
     if (options.limit !== undefined) {
       const lim = parseInt(options.limit, 10);
       if (!isNaN(lim) && lim > 0) ast.limit = lim;
     }
 
-    // Validate
     try {
       validateAST(ast);
     } catch (error) {
@@ -48,7 +45,6 @@ export function createQueryCommand(db: DatabaseManager): Command {
       process.exit(1);
     }
 
-    // Build + Execute + Format
     try {
       const built = buildQuery(ast);
       const result = await executeQuery(db, built);
