@@ -80,6 +80,31 @@ For `releases` and `tracks`, `contains` matches whole comma-separated values. Th
 
 For the `artists` entity, `contains` uses `LIKE '%value%'` which is less precise (substring match).
 
+## Multi-value field expansion in `group by`
+
+When a `multi_text` field (`genre`, `style`, `label`) appears in `group by`, values are automatically expanded. A release with `styles = "Hard Bop, Cool Jazz"` contributes one count to **Hard Bop** and one count to **Cool Jazz** — not to the combined string.
+
+```
+releases count(), style group by style order by count desc
+```
+
+This uses a recursive CTE under the hood to split the comma-separated column before grouping.
+
+`WHERE` conditions on the expanded field are applied **before** expansion — they filter which releases are included, then all individual values of those releases are counted:
+
+```
+# Styles found among Jazz releases
+releases count(), style where genre contains 'Jazz' group by style order by count desc
+```
+
+### AND combination filter
+
+To find releases that have two specific styles simultaneously, use multiple `contains` conditions:
+
+```
+releases title, year where style contains 'Techno' and style contains 'Jungle'
+```
+
 ## Aggregation
 
 Supported functions: `count()`, `min(field)`, `max(field)`, `avg(field)`, `sum(field)`.
@@ -91,6 +116,9 @@ When any aggregation is present, non-aggregated fields must appear in `group by`
 ## Examples
 
 ```bash
+# Breakdown by individual genre (each genre counted separately)
+discogs-cli collection query 'releases count(), genre group by genre order by count desc'
+
 # Breakdown by genre
 discogs-cli collection query 'releases count(), genre group by genre order by count desc'
 
@@ -119,6 +147,9 @@ The pipeline is: **parse → validate → build → execute → format**
 | Execute    | `src/services/query/executor.ts`      | Runs SQL via `DatabaseManager.rawQuery()` |
 | Format     | `src/services/query/formatter.ts`     | Tabular or JSON output |
 | Command    | `src/commands/query.ts`               | Wires pipeline, handles errors, prints to stdout |
+
+### Multi-value field expansion
+When `group by` includes a `multi_text` field, the builder generates a recursive split CTE (e.g. `style_split`) that produces `(release_id, val)` pairs — one per individual value in the comma-separated column. The FROM clause is rewritten to join through this CTE. `WHERE` conditions always reference the original `r.*` column so they filter on the pre-expanded data. The split field's column expression becomes `s.val` in SELECT and GROUP BY.
 
 ### Artists virtual entity
 Implemented as a recursive CTE that splits `releases.artists` (comma-separated) into individual rows, then aggregates release counts and genre/style lists per artist name.
