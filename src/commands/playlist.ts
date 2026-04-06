@@ -13,8 +13,9 @@ import { Validator, ValidationError } from '../utils/validator';
 import { EncryptionService } from '../utils/encryption';
 import { InputSanitizer } from '../utils/sanitizer';
 import { Logger, LogLevel } from '../utils/logger';
-import { createReviewCommand, createUnmatchedCommand, createResetCommand, createDeleteCommand } from './review';
-import { createExportCommand } from './export';
+import { createReviewCommand, createUnmatchedCommand, createResetCommand, createDeleteCommand, createExcludedCommand } from './review';
+import { createExportCommand, parseCsvForImport, extractTrackIdFromUrl } from './export';
+import fs from 'fs';
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -35,6 +36,8 @@ function addPlaylistFilterOptions(cmd: Command): Command {
     .option('--private', 'Create as private playlist')
     .option('--acquired-after <date>', 'Only include releases acquired on or after this date (YYYY-MM-DD)')
     .option('--acquired-before <date>', 'Only include releases acquired on or before this date (YYYY-MM-DD)')
+    .option('--limit <n>', 'Maximum tracks to include (default: 500, max: 500)')
+    .option('--from-csv <filepath>', 'Use a previously exported CSV to control which tracks are included')
     .option('-v, --verbose', 'Show detailed matching/search debug output');
 }
 
@@ -127,7 +130,7 @@ async function runPlaylistAction(
         );
         spinner.text = 'Retrieving access token...';
         const token = await oauthService.getValidAccessToken();
-        clientToUse = new SoundCloudAPIClient(token, rateLimitService);
+        clientToUse = new SoundCloudAPIClient(token, rateLimitService, oauthService);
         spinner.text = '';
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
@@ -140,10 +143,105 @@ async function runPlaylistAction(
     // Commander maps --acquired-after → options.acquiredAfter automatically
     const validated = Validator.validatePlaylistOptions(options);
 
-    const collectionService = new CollectionService(discogsClient, db);
+    // --from-csv is mutually exclusive with filter flags
+    if (options.fromCsv && (options.genres || options.styles || options.artists || options.labels || options.minYear || options.maxYear || options.acquiredAfter || options.acquiredBefore || options.releaseIds)) {
+      throw new Error('--from-csv cannot be combined with filter flags (--genres, --styles, etc.)');
+    }
+
     const playlistService = new PlaylistService(clientToUse, db, rateLimitService);
     const progressCallback = CommandBuilder.createProgressCallback(spinner);
 
+    // --from-csv flow: bypass track matching, use pre-selected track IDs from CSV
+    if (options.fromCsv) {
+      const csvPath = options.fromCsv as string;
+      if (!fs.existsSync(csvPath)) {
+        throw new Error(`CSV file not found: ${csvPath}`);
+      }
+      const csvContent = fs.readFileSync(csvPath, 'utf8');
+
+      let parsed: { includedTrackIds: string[]; excludedRows: Array<{ soundcloudTrackId: string; confidence: number }> };
+      try {
+        parsed = parseCsvForImport(csvContent);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`CSV parse error: ${msg}`);
+      }
+
+      // Resolve any permalink URLs that weren't in the fallback format
+      const resolvedTrackIds: string[] = [];
+      for (const rawUrl of parsed.includedTrackIds) {
+        const directId = extractTrackIdFromUrl(rawUrl);
+        if (directId) {
+          resolvedTrackIds.push(directId);
+          continue;
+        }
+        // Try DB lookup by permalink URL
+        const dbId = await db.getTrackIdByPermalinkUrl(rawUrl);
+        if (dbId) {
+          resolvedTrackIds.push(dbId);
+          continue;
+        }
+        // Fall back to API resolve
+        spinner.text = `Resolving SoundCloud URL...`;
+        try {
+          const resource = await clientToUse!.resolveUrl(rawUrl);
+          resolvedTrackIds.push(String(resource.id));
+        } catch {
+          throw new Error(`Could not resolve SoundCloud URL: ${rawUrl}`);
+        }
+      }
+
+      if (resolvedTrackIds.length === 0) {
+        throw new Error('No includable tracks found in CSV (no rows with include=yes and status=matched)');
+      }
+
+      // Create or update the SoundCloud playlist
+      spinner.text = `Syncing "${validated.title}" from CSV...`;
+      const existingPlaylist = await db.getPlaylistByTitle(validated.title);
+      let playlistId: string;
+      let created = false;
+
+      if (existingPlaylist?.soundcloudId) {
+        playlistId = existingPlaylist.soundcloudId;
+        await clientToUse!.addTracksToPlaylist(playlistId, resolvedTrackIds);
+      } else {
+        const newPlaylist = await clientToUse!.createPlaylistWithTracks(
+          validated.title,
+          resolvedTrackIds,
+          validated.description || '',
+          validated.isPrivate
+        );
+        playlistId = String(newPlaylist.id);
+        await db.createPlaylist(playlistId, validated.title, validated.description);
+        created = true;
+      }
+
+      // Save excluded tracks from CSV
+      await db.deleteExcludedTracks(validated.title);
+      if (parsed.excludedRows.length > 0) {
+        await db.saveExcludedTracks(validated.title, parsed.excludedRows.map(r => ({
+          discogsReleaseId: 0,
+          discogsTrackTitle: '',
+          soundcloudTrackId: r.soundcloudTrackId,
+          confidence: r.confidence,
+        })));
+      }
+
+      const action = created ? 'Created' : 'Updated';
+      const excludedInfo = parsed.excludedRows.length > 0
+        ? chalk.gray(`\n   ${parsed.excludedRows.length} track(s) marked as excluded in CSV`)
+        : '';
+      spinner.succeed(
+        CommandBuilder.formatSuccess(
+          `${action} "${validated.title}" from CSV with ${resolvedTrackIds.length} tracks`
+        ) + excludedInfo
+      );
+      console.log(chalk.gray(`Playlist ID: ${playlistId}`));
+      process.exit(0);
+    }
+
+    // Normal flow: match tracks from collection releases
+    const collectionService = new CollectionService(discogsClient, db);
     let releases;
 
     if (validated.releaseIds) {
@@ -162,7 +260,8 @@ async function runPlaylistAction(
       validated.title,
       releases,
       validated.description,
-      progressCallback
+      progressCallback,
+      validated.limit
     );
 
     const unmatchedCounts = await db.countUnmatchedTracks(validated.title);
@@ -170,10 +269,14 @@ async function runPlaylistAction(
       ? chalk.yellow(`\n   ${unmatchedCounts.pending} track(s) could not be matched automatically — run:\n   discogs-cli playlist tracks review --title "${validated.title}"`)
       : '';
 
+    const excludedInfo = playlist.excludedCount > 0
+      ? chalk.gray(`\n   ${playlist.excludedCount} track(s) excluded (playlist limit: ${validated.limit}) — run:\n   discogs-cli playlist tracks excluded --title "${validated.title}"`)
+      : '';
+
     spinner.succeed(
       CommandBuilder.formatSuccess(
         `Playlist "${options.title}" created with ${playlist.trackCount} tracks`
-      ) + unmatchedInfo
+      ) + unmatchedInfo + excludedInfo
     );
     console.log(chalk.gray(`Playlist ID: ${playlist.id}`));
     process.exit(0);
@@ -230,6 +333,7 @@ function createTracksCommand(
   tracksCmd.addCommand(createReviewCommand(soundcloudClient, db));
   tracksCmd.addCommand(createUnmatchedCommand(db));
   tracksCmd.addCommand(createResetCommand(db));
+  tracksCmd.addCommand(createExcludedCommand(db));
 
   return tracksCmd;
 }

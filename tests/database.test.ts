@@ -427,4 +427,78 @@ describe('DatabaseManager', () => {
       expect(forB[0].discogsTrackTitle).toBe('Track Y');
     });
   });
+
+  describe('excluded_tracks CRUD', () => {
+    test('fresh database has excluded_tracks table', async () => {
+      const tables = (dbManager as any).db.prepare(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name='excluded_tracks'`
+      ).all() as Array<{ name: string }>;
+      expect(tables).toHaveLength(1);
+    });
+
+    test('saveExcludedTracks writes records and getExcludedTracks reads them back', async () => {
+      const records = [
+        { discogsReleaseId: 1, discogsTrackTitle: 'Track A', soundcloudTrackId: 'sc-1', confidence: 0.82 },
+        { discogsReleaseId: 2, discogsTrackTitle: 'Track B', soundcloudTrackId: 'sc-2', confidence: 0.61 },
+      ];
+
+      await dbManager.saveExcludedTracks('My Playlist', records);
+      const rows = await dbManager.getExcludedTracks('My Playlist');
+
+      expect(rows).toHaveLength(2);
+      // Returned in confidence DESC order
+      expect(rows[0].soundcloudTrackId).toBe('sc-1');
+      expect(rows[0].confidence).toBe(0.82);
+      expect(rows[1].soundcloudTrackId).toBe('sc-2');
+      expect(rows[1].confidence).toBe(0.61);
+    });
+
+    test('getExcludedTracks returns empty array for unknown playlist', async () => {
+      const rows = await dbManager.getExcludedTracks('No Such Playlist');
+      expect(rows).toHaveLength(0);
+    });
+
+    test('deleteExcludedTracks removes records for a playlist', async () => {
+      await dbManager.saveExcludedTracks('My Playlist', [
+        { discogsReleaseId: 1, discogsTrackTitle: 'Track A', soundcloudTrackId: 'sc-1', confidence: 0.9 },
+      ]);
+
+      const deleted = await dbManager.deleteExcludedTracks('My Playlist');
+      expect(deleted).toBe(1);
+
+      const rows = await dbManager.getExcludedTracks('My Playlist');
+      expect(rows).toHaveLength(0);
+    });
+
+    test('deletePlaylistData also clears excluded_tracks for the title', async () => {
+      // Set up a minimal playlist with a release
+      const release: StoredRelease = {
+        discogsId: 1,
+        title: 'Album',
+        artists: 'Artist',
+        year: 2020,
+        genres: 'Rock',
+        styles: '',
+        addedAt: new Date(),
+      };
+      await dbManager.addRelease(release);
+      await dbManager.createPlaylist('pl-1', 'My Playlist');
+      await dbManager.saveExcludedTracks('My Playlist', [
+        { discogsReleaseId: 1, discogsTrackTitle: 'Track A', soundcloudTrackId: 'sc-1', confidence: 0.7 },
+      ]);
+
+      await dbManager.deletePlaylistData('My Playlist');
+
+      const rows = await dbManager.getExcludedTracks('My Playlist');
+      expect(rows).toHaveLength(0);
+    });
+
+    test('migration v6 creates excluded_tracks on existing DB (simulated by checking schema version)', async () => {
+      // The in-memory DB goes through all migrations; check it reached v6
+      const version = (dbManager as any).db
+        .prepare('SELECT version FROM schema_version ORDER BY version DESC LIMIT 1')
+        .get() as { version: number };
+      expect(version.version).toBeGreaterThanOrEqual(6);
+    });
+  });
 });

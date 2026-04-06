@@ -139,6 +139,17 @@ export class DatabaseManager {
           FOREIGN KEY (discogsReleaseId) REFERENCES releases(discogsId)
         );
 
+        CREATE TABLE IF NOT EXISTS excluded_tracks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          playlistTitle TEXT NOT NULL,
+          discogsReleaseId INTEGER NOT NULL,
+          discogsTrackTitle TEXT NOT NULL,
+          soundcloudTrackId TEXT NOT NULL,
+          confidence REAL,
+          reason TEXT NOT NULL DEFAULT 'limit_exceeded',
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
         CREATE INDEX IF NOT EXISTS idx_releases_year ON releases(year);
         CREATE INDEX IF NOT EXISTS idx_releases_genres ON releases(genres);
         CREATE INDEX IF NOT EXISTS idx_tracks_releaseId ON tracks(releaseId);
@@ -146,6 +157,7 @@ export class DatabaseManager {
         CREATE INDEX IF NOT EXISTS idx_dlq_username ON dlq(username);
         CREATE INDEX IF NOT EXISTS idx_track_matches_release ON track_matches(discogsReleaseId);
         CREATE INDEX IF NOT EXISTS idx_unmatched_playlist ON unmatched_tracks(playlistTitle, status);
+        CREATE INDEX IF NOT EXISTS idx_excluded_playlist ON excluded_tracks(playlistTitle);
       `);
 
       // Run database migrations if needed
@@ -161,6 +173,9 @@ export class DatabaseManager {
       }
       if (currentVersion < 5) {
         this.migrateToVersion5();
+      }
+      if (currentVersion < 6) {
+        this.migrateToVersion6();
       }
     });
   }
@@ -356,6 +371,9 @@ export class DatabaseManager {
         const unmatchedResult = this.db.prepare(
           `DELETE FROM unmatched_tracks WHERE playlistTitle = ?`
         ).run(title);
+
+        // Delete excluded_tracks for this playlist
+        this.db.prepare(`DELETE FROM excluded_tracks WHERE playlistTitle = ?`).run(title);
 
         // Delete the playlist record
         this.db.prepare(`DELETE FROM playlists WHERE id = ?`).run(playlistId);
@@ -601,6 +619,97 @@ export class DatabaseManager {
     });
   }
 
+  /**
+   * Look up a SoundCloud track ID by its permalink URL stored in track_matches.
+   * Returns null if not found.
+   */
+  getTrackIdByPermalinkUrl(permalinkUrl: string): Promise<string | null> {
+    return Promise.resolve().then(() => {
+      const row = this.db.prepare(
+        `SELECT soundcloudTrackId FROM track_matches WHERE matchedPermalinkUrl = ? LIMIT 1`
+      ).get(permalinkUrl) as { soundcloudTrackId: string } | undefined;
+      return row?.soundcloudTrackId || null;
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Excluded tracks — tracks beyond the SoundCloud playlist limit
+  // ---------------------------------------------------------------------------
+
+  saveExcludedTracks(
+    playlistTitle: string,
+    tracks: Array<{
+      discogsReleaseId: number;
+      discogsTrackTitle: string;
+      soundcloudTrackId: string;
+      confidence: number;
+    }>
+  ): Promise<void> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(`
+        INSERT OR REPLACE INTO excluded_tracks
+          (playlistTitle, discogsReleaseId, discogsTrackTitle, soundcloudTrackId, confidence, reason)
+        VALUES (?, ?, ?, ?, ?, 'limit_exceeded')
+      `);
+      const tx = this.db.transaction(() => {
+        for (const t of tracks) {
+          stmt.run(playlistTitle, t.discogsReleaseId, t.discogsTrackTitle, t.soundcloudTrackId, t.confidence);
+        }
+      });
+      tx();
+    });
+  }
+
+  getExcludedTracks(playlistTitle: string): Promise<Array<{
+    id: number;
+    playlistTitle: string;
+    discogsReleaseId: number;
+    discogsTrackTitle: string;
+    soundcloudTrackId: string;
+    confidence: number | null;
+    reason: string;
+    createdAt: string;
+  }>> {
+    return Promise.resolve().then(() => {
+      const stmt = this.db.prepare(`
+        SELECT * FROM excluded_tracks WHERE playlistTitle = ? ORDER BY confidence DESC
+      `);
+      return (stmt.all(playlistTitle) as any[]) || [];
+    });
+  }
+
+  deleteExcludedTracks(playlistTitle: string): Promise<number> {
+    return Promise.resolve().then(() => {
+      return this.db.prepare(`DELETE FROM excluded_tracks WHERE playlistTitle = ?`).run(playlistTitle).changes;
+    });
+  }
+
+  /**
+   * Get confidence scores and metadata for a list of SoundCloud track IDs.
+   * Joined with releases for addedAt tie-breaking in updatePlaylist.
+   */
+  getMatchConfidenceByTrackIds(
+    soundcloudTrackIds: string[]
+  ): Promise<Array<{
+    soundcloudTrackId: string;
+    discogsReleaseId: number;
+    discogsTrackTitle: string;
+    confidence: number;
+    addedAt: string;
+  }>> {
+    return Promise.resolve().then(() => {
+      if (soundcloudTrackIds.length === 0) return [];
+      const placeholders = soundcloudTrackIds.map(() => '?').join(',');
+      const stmt = this.db.prepare(`
+        SELECT tm.soundcloudTrackId, tm.discogsReleaseId, tm.discogsTrackTitle, tm.confidence, r.addedAt
+        FROM track_matches tm
+        JOIN releases r ON r.discogsId = tm.discogsReleaseId
+        WHERE tm.soundcloudTrackId IN (${placeholders})
+      `);
+      return (stmt.all(...soundcloudTrackIds) as any[]) || [];
+    });
+  }
+
   close(): Promise<void> {
     return Promise.resolve().then(() => {
       try {
@@ -758,6 +867,32 @@ export class DatabaseManager {
       this.setSchemaVersion(5);
     } catch (err) {
       console.error('Migration to version 5 failed:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * Migrate database from version 5 to version 6
+   * Adds excluded_tracks table for storing tracks that exceeded the playlist limit.
+   */
+  private migrateToVersion6(): void {
+    try {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS excluded_tracks (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          playlistTitle TEXT NOT NULL,
+          discogsReleaseId INTEGER NOT NULL,
+          discogsTrackTitle TEXT NOT NULL,
+          soundcloudTrackId TEXT NOT NULL,
+          confidence REAL,
+          reason TEXT NOT NULL DEFAULT 'limit_exceeded',
+          createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_excluded_playlist ON excluded_tracks(playlistTitle);
+      `);
+      this.setSchemaVersion(6);
+    } catch (err) {
+      console.error('Migration to version 6 failed:', err);
       throw err;
     }
   }

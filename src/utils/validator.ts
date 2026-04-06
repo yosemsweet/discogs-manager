@@ -212,6 +212,7 @@ export class Validator {
         isPrivate: boolean;
         filter: PlaylistFilter;
         releaseIds?: number[];
+        limit: number;
     } {
         if (!options.title || typeof options.title !== 'string') {
             throw new ValidationError('title', 'Title is required');
@@ -331,7 +332,18 @@ export class Validator {
             releaseIds = this.validateReleaseIds(options.releaseIds);
         }
 
-        return { title, description, isPrivate, filter, releaseIds };
+        let limit = 500;
+        if (options.limit !== undefined && options.limit !== null) {
+            limit = parseInt(String(options.limit), 10);
+            if (isNaN(limit) || limit < 1) {
+                throw new ValidationError('limit', 'limit must be a positive integer');
+            }
+            if (limit > 500) {
+                throw new ValidationError('limit', 'limit cannot exceed 500 (SoundCloud playlist cap)');
+            }
+        }
+
+        return { title, description, isPrivate, filter, releaseIds, limit };
     }
 
     /**

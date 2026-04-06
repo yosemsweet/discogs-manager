@@ -112,7 +112,7 @@ describe('generatePlaylistCsv', () => {
   test('headers are always the first row', async () => {
     const csv = await generatePlaylistCsv(db, 'My Jazz');
     const rows = csv.trimEnd().split('\n');
-    expect(rows[0]).toBe('discogs_artist,discogs_release,discogs_track,soundcloud_track,soundcloud_url,confidence,status');
+    expect(rows[0]).toBe('discogs_artist,discogs_release,discogs_track,soundcloud_track,soundcloud_url,confidence,status,include');
   });
 
   test('headers are written even when no tracks exist', async () => {
@@ -143,12 +143,13 @@ describe('generatePlaylistCsv', () => {
     // Row 2 = matched, Row 3 = unmatched (alphabetically: Flamenco after So What at release level, but both same release)
     const unmatchedRow = rows.find(r => r.includes('Flamenco Sketches'));
     expect(unmatchedRow).toBeDefined();
-    // Parse the row: the last 4 fields should be: '', '', '', 'unmatched'
+    // Parse the row: the last 5 fields should be: '', '', '', 'unmatched', ''
     const fields = unmatchedRow!.split(',');
-    expect(fields[fields.length - 1]).toBe('unmatched');
-    expect(fields[fields.length - 2]).toBe('');  // confidence
-    expect(fields[fields.length - 3]).toBe('');  // soundcloud_url
-    expect(fields[fields.length - 4]).toBe('');  // soundcloud_track
+    expect(fields[fields.length - 1]).toBe('');  // include (blank for unmatched)
+    expect(fields[fields.length - 2]).toBe('unmatched');  // status
+    expect(fields[fields.length - 3]).toBe('');  // confidence
+    expect(fields[fields.length - 4]).toBe('');  // soundcloud_url
+    expect(fields[fields.length - 5]).toBe('');  // soundcloud_track
   });
 
   test('matched tracks appear before unmatched tracks', async () => {
