@@ -1,5 +1,6 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { SoundCloudRateLimitService } from '../services/soundcloud-rate-limit';
+import { SoundCloudOAuthService } from '../services/soundcloud-oauth';
 import { Logger } from '../utils/logger';
 import { ErrorHandler, AppError, ErrorContext } from '../utils/error-handler';
 
@@ -58,14 +59,21 @@ export class SoundCloudAPIClient {
   private client: AxiosInstance;
   private accessToken: string;
   private rateLimitService: SoundCloudRateLimitService | null = null;
+  private oauthService: SoundCloudOAuthService | null = null;
+  private refreshPromise: Promise<string> | null = null;
 
-  constructor(accessToken: string, rateLimitService?: SoundCloudRateLimitService) {
+  constructor(
+    accessToken: string,
+    rateLimitService?: SoundCloudRateLimitService,
+    oauthService?: SoundCloudOAuthService
+  ) {
     if (!accessToken) {
       throw new Error('SoundCloud API requires an OAuth access token');
     }
 
     this.accessToken = accessToken;
     this.rateLimitService = rateLimitService || null;
+    this.oauthService = oauthService || null;
 
     this.client = axios.create({
       baseURL: 'https://api.soundcloud.com',
@@ -74,6 +82,38 @@ export class SoundCloudAPIClient {
       },
       timeout: 30000, // 30 second timeout
     });
+
+    // Install retry-on-401 interceptor when oauthService is provided.
+    // Concurrent 401s share a single refresh call via refreshPromise to
+    // avoid racing on the underlying refresh token.
+    if (this.oauthService) {
+      this.client.interceptors.response.use(
+        (response) => response,
+        async (error) => {
+          const originalRequest = error.config;
+          if (
+            error.response?.status === 401 &&
+            !originalRequest._retried &&
+            this.oauthService
+          ) {
+            originalRequest._retried = true;
+
+            if (!this.refreshPromise) {
+              this.refreshPromise = this.oauthService.getValidAccessToken().finally(() => {
+                this.refreshPromise = null;
+              });
+            }
+            const newToken = await this.refreshPromise;
+
+            this.accessToken = newToken;
+            this.client.defaults.headers['Authorization'] = `OAuth ${newToken}`;
+            originalRequest.headers['Authorization'] = `OAuth ${newToken}`;
+            return this.client(originalRequest);
+          }
+          return Promise.reject(error);
+        }
+      );
+    }
   }
 
   private handleError(error: any, operation: string): never {

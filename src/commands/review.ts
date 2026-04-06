@@ -432,6 +432,40 @@ export function createDeleteCommand(
   return cmd;
 }
 
+export function createExcludedCommand(db: DatabaseManager) {
+  const cmd = new Command('excluded')
+    .description('Show tracks excluded from a playlist due to the 500-track limit')
+    .requiredOption('-t, --title <title>', 'Playlist title')
+    .option('--json', 'Output as JSON');
+
+  cmd.action(async (options) => {
+    const tracks = await db.getExcludedTracks(options.title);
+
+    if (options.json) {
+      console.log(JSON.stringify(tracks, null, 2));
+      process.exit(0);
+    }
+
+    if (tracks.length === 0) {
+      console.log(chalk.gray(`No excluded tracks for "${options.title}".`));
+      process.exit(0);
+    }
+
+    console.log(chalk.bold(`\nExcluded tracks for "${options.title}" (${tracks.length})\n`));
+    tracks.forEach((t, idx) => {
+      const conf = t.confidence !== null ? chalk.yellow(`${(t.confidence * 100).toFixed(0)}%`) : chalk.gray('?%');
+      console.log(`${idx + 1}. ${conf}  ${chalk.cyan(t.discogsTrackTitle || '(unknown track)')}`);
+      console.log(chalk.gray(`   SoundCloud ID: ${t.soundcloudTrackId}  Reason: ${t.reason}`));
+      console.log();
+    });
+
+    console.log(chalk.gray(`To include these tracks, reduce the filter scope or use --limit to raise the cap.`));
+    process.exit(0);
+  });
+
+  return cmd;
+}
+
 export async function resolveTrack(
   db: DatabaseManager,
   batchManager: PlaylistBatchManager,

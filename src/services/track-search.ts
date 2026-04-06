@@ -45,8 +45,8 @@ export class TrackSearchService {
         releases: StoredRelease[],
         onProgress: ProgressCallback = noopProgress,
         playlistTitle?: string
-    ): Promise<Array<{ trackId: string; discogsId: number }>> {
-        const trackData: Array<{ trackId: string; discogsId: number }> = [];
+    ): Promise<Array<{ trackId: string; discogsId: number; confidence: number }>> {
+        const trackData: Array<{ trackId: string; discogsId: number; confidence: number }> = [];
         let processedCount = 0;
         let totalMatched = 0;
         let totalSearched = 0;
@@ -84,7 +84,7 @@ export class TrackSearchService {
                     if (preflightResult) {
                         // Add matched tracks from playlist
                         for (const m of preflightResult.matched) {
-                            trackData.push(m);
+                            trackData.push({ ...m });
                             totalMatched++;
                         }
                         totalSearched += tracks.length - preflightResult.unmatchedTracks.length;
@@ -115,6 +115,7 @@ export class TrackSearchService {
                         trackData.push({
                             trackId: matchResult.trackId,
                             discogsId: release.discogsId,
+                            confidence: matchResult.confidence,
                         });
                         totalMatched++;
                         Logger.debug(
@@ -151,7 +152,7 @@ export class TrackSearchService {
         release: StoredRelease,
         tracks: any[]
     ): Promise<{
-        matched: Array<{ trackId: string; discogsId: number }>;
+        matched: Array<{ trackId: string; discogsId: number; confidence: number }>;
         unmatchedTracks: any[];
     } | null> {
         try {
@@ -236,6 +237,7 @@ export class TrackSearchService {
             const matched = mapping.matched.map(m => ({
                 trackId: (m.soundcloudTrack.id || (m.soundcloudTrack as any).track_id).toString(),
                 discogsId: release.discogsId,
+                confidence: bestMatch.confidence,
             }));
 
             // Cache matched tracks so future runs don't re-search

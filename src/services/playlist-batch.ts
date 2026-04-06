@@ -1,21 +1,21 @@
 import { SoundCloudAPIClient } from '../api/soundcloud';
 import { ProgressCallback, noopProgress } from '../utils/progress';
 
+/** Maximum number of tracks SoundCloud allows in a single playlist. */
+export const SOUNDCLOUD_PLAYLIST_TRACK_LIMIT = 500;
+
 /**
- * Handles batch operations for playlists on SoundCloud
- * Responsibilities:
- * - Create playlists with batching for large track counts
- * - Add tracks to playlists with batching
- * - Split operations into manageable chunks
+ * Handles batch operations for playlists on SoundCloud.
+ * Since SoundCloud caps playlists at 500 tracks and callers enforce that cap
+ * upstream, all payloads are guaranteed to be ≤ 500 and can be sent in a
+ * single PUT request.
  */
 export class PlaylistBatchManager {
-    private readonly BATCH_SIZE = 100; // SoundCloud likely has a limit around 100-200 tracks per request
-
     constructor(private soundcloudClient: SoundCloudAPIClient) { }
 
     /**
-     * Create a playlist, handling track batching if necessary
-     * If trackIds exceeds BATCH_SIZE, creates empty playlist then adds tracks in batches
+     * Create a playlist with the given tracks in a single API call.
+     * Callers must ensure trackIds.length ≤ SOUNDCLOUD_PLAYLIST_TRACK_LIMIT.
      */
     async createPlaylistWithBatching(
         title: string,
@@ -31,31 +31,16 @@ export class PlaylistBatchManager {
             message: title,
         });
 
-        let playlist;
-
-        if (trackIds.length <= this.BATCH_SIZE) {
-            // Small enough for single request
-            playlist = await this.soundcloudClient.createPlaylistWithTracks(title, trackIds, description, isPublic);
-        } else {
-            // Too many tracks - create empty playlist first, then add tracks in batches
-            playlist = await this.soundcloudClient.createPlaylist(title, description, isPublic);
-
-            // Give SoundCloud API a moment to process the playlist creation
-            await new Promise((resolve) => setTimeout(resolve, 500));
-
-            // Add tracks in batches
-            await this.addTracksInBatches(
-                String(playlist.id),
-                trackIds,
-                onProgress
-            );
-        }
+        const playlist = await this.soundcloudClient.createPlaylistWithTracks(
+            title, trackIds, description, isPublic
+        );
 
         return playlist;
     }
 
     /**
-     * Add tracks to an existing playlist, handling batching automatically
+     * Replace an existing playlist's track list with a single PUT.
+     * Callers must ensure trackIds.length ≤ SOUNDCLOUD_PLAYLIST_TRACK_LIMIT.
      */
     async addTracksInBatches(
         playlistId: string,
@@ -66,25 +51,13 @@ export class PlaylistBatchManager {
             return;
         }
 
-        if (trackIds.length <= this.BATCH_SIZE) {
-            // Small enough for a single request
-            await this.soundcloudClient.addTracksToPlaylist(playlistId, trackIds);
-        } else {
-            // SoundCloud PUT /playlists/{id} replaces the entire track list, so each
-            // batch must include all previously sent tracks or they get wiped.
-            // Accumulate sent IDs and grow the payload with each request.
-            const accumulated: string[] = [];
-            for (let i = 0; i < trackIds.length; i += this.BATCH_SIZE) {
-                const batch = trackIds.slice(i, i + this.BATCH_SIZE);
-                accumulated.push(...batch);
-                onProgress({
-                    stage: 'Adding tracks to playlist',
-                    current: accumulated.length,
-                    total: trackIds.length,
-                    message: `Batch ${Math.floor(i / this.BATCH_SIZE) + 1}/${Math.ceil(trackIds.length / this.BATCH_SIZE)}`,
-                });
-                await this.soundcloudClient.addTracksToPlaylist(playlistId, accumulated);
-            }
-        }
+        onProgress({
+            stage: 'Adding tracks to playlist',
+            current: trackIds.length,
+            total: trackIds.length,
+            message: `${trackIds.length} tracks`,
+        });
+
+        await this.soundcloudClient.addTracksToPlaylist(playlistId, trackIds);
     }
 }
