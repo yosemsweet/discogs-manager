@@ -151,11 +151,11 @@ describe('collection retry reads DISCOGS_API_TOKEN', () => {
     const savedToken = process.env.DISCOGS_API_TOKEN;
     delete process.env.DISCOGS_API_TOKEN;
 
-    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => { });
     const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit'); });
 
     const cmd = createRetryCommand(mockDb);
-    try { await cmd.parseAsync([], { from: 'user' }); } catch {}
+    try { await cmd.parseAsync([], { from: 'user' }); } catch { }
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('DISCOGS_API_TOKEN'));
@@ -198,14 +198,14 @@ describe('--verbose / -v available on all commands', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Change 9: version 2.0.0
+// Change 9: version 2.1.0
 // ---------------------------------------------------------------------------
 
-describe('version 2.0.0', () => {
-  test('package.json version is 2.0.0', () => {
+describe('version 2.1.0', () => {
+  test('package.json version is 2.1.0', () => {
     const pkg = JSON.parse(
       fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8')
     );
-    expect(pkg.version).toBe('2.0.0');
+    expect(pkg.version).toBe('2.1.0');
   });
 });
