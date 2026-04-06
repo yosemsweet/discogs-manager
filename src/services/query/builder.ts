@@ -7,6 +7,9 @@ export interface BuiltQuery {
   columns: string[];
 }
 
+// Column expression referencing the split CTE value; used in SELECT, WHERE guard, GROUP BY, ORDER BY.
+const SPLIT_VAL = 's.val';
+
 const AGG_SQL: Record<AggFunc, (col: string) => string> = {
   count: (col) => col ? `COUNT(${col})` : 'COUNT(*)',
   min:   (col) => `MIN(${col})`,
@@ -94,7 +97,7 @@ function buildOrderByClause(
         parts.push(`${AGG_SQL[item.aggregation]('')} ${dir}`);
       }
     } else {
-      const col = (expandedField && item.field === expandedField) ? 's.val' : getField(entity, item.field).column;
+      const col = (expandedField && item.field === expandedField) ? SPLIT_VAL : getField(entity, item.field).column;
       parts.push(`${col} ${dir}`);
     }
   }
@@ -102,7 +105,6 @@ function buildOrderByClause(
   return parts.length > 0 ? 'ORDER BY ' + parts.join(', ') : '';
 }
 
-// Generates a recursive CTE that splits a comma-separated column into individual (release_id, val) rows.
 function buildSplitCTE(rawColumn: string, fieldName: string): string {
   return `WITH RECURSIVE ${fieldName}_split(release_id, val, rest) AS (
   SELECT discogsId,
@@ -157,22 +159,21 @@ export function buildQuery(ast: QueryAST): BuiltQuery {
   // WHERE conditions always use the original column (pre-expansion) to filter which releases
   // are included, then all individual values of those releases are counted.
   let expandedField: string | null = null;
-  if (!isVirtual) {
-    for (const f of ast.groupBy) {
-      if (getField(ast.entity, f).type === 'multi_text') { expandedField = f; break; }
-    }
-  }
-
   let splitCTE = '';
   let fromClause = entity.fromClause;
-  if (expandedField) {
-    const rawCol = getField(ast.entity, expandedField).column.replace(/^\w+\./, '');
-    splitCTE = buildSplitCTE(rawCol, expandedField);
-    if (ast.entity === 'releases') {
-      fromClause = `${expandedField}_split s JOIN releases r ON r.discogsId = s.release_id`;
-    } else {
-      // tracks: add split as extra join
-      fromClause = `${entity.fromClause} JOIN ${expandedField}_split s ON s.release_id = r.discogsId`;
+  if (!isVirtual) {
+    for (const f of ast.groupBy) {
+      const fd = getField(ast.entity, f);
+      if (fd.type === 'multi_text') {
+        expandedField = f;
+        // Column expressions follow "alias.name" format (e.g. "r.genres"); strip the alias prefix.
+        const rawCol = fd.column.replace(/^\w+\./, '');
+        splitCTE = buildSplitCTE(rawCol, f);
+        fromClause = ast.entity === 'releases'
+          ? `${f}_split s JOIN releases r ON r.discogsId = s.release_id`
+          : `${entity.fromClause} JOIN ${f}_split s ON s.release_id = r.discogsId`;
+        break;
+      }
     }
   }
 
@@ -188,7 +189,7 @@ export function buildQuery(ast: QueryAST): BuiltQuery {
   for (const item of selectItems) {
     let { expr, alias } = buildSelectExpression(item, ast.entity);
     if (expandedField && item.type === 'field' && item.field === expandedField) {
-      expr = 's.val';
+      expr = SPLIT_VAL;
     }
     selectParts.push(`${expr} AS ${alias}`);
     columns.push(alias);
@@ -196,11 +197,10 @@ export function buildQuery(ast: QueryAST): BuiltQuery {
 
   const selectClause = 'SELECT ' + selectParts.join(', ');
 
-  // Build WHERE clause (always references original r.* columns, even for the expanded field)
   const whereClause = buildWhereClause(ast.where, ast.entity, isVirtual, params);
   let effectiveWhere = whereClause;
   if (expandedField) {
-    const nullGuard = `s.val IS NOT NULL AND TRIM(s.val) != ''`;
+    const nullGuard = `${SPLIT_VAL} IS NOT NULL AND TRIM(${SPLIT_VAL}) != ''`;
     effectiveWhere = whereClause ? `${whereClause} AND ${nullGuard}` : `WHERE ${nullGuard}`;
   }
 
@@ -208,7 +208,7 @@ export function buildQuery(ast: QueryAST): BuiltQuery {
   let groupByClause = '';
   if (ast.groupBy.length > 0) {
     const groupParts = ast.groupBy.map(f =>
-      (expandedField && f === expandedField) ? 's.val' : getField(ast.entity, f).column
+      (expandedField && f === expandedField) ? SPLIT_VAL : getField(ast.entity, f).column
     );
     groupByClause = 'GROUP BY ' + groupParts.join(', ');
   }
