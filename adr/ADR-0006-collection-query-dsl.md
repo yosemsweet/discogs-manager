@@ -43,9 +43,17 @@ Entity/field definitions live in `src/services/query/schema.ts` as a declarative
 ### Parameterized queries only
 All user-supplied values are passed as SQL parameters, never interpolated into the SQL string. This is enforced at the builder layer.
 
+### Multi-value field expansion in GROUP BY
+
+When a `multi_text` field appears in `group by`, a recursive split CTE is automatically generated to expand the comma-separated column into individual rows before grouping. A release with `styles = "Hard Bop, Cool Jazz"` contributes to both the "Hard Bop" and "Cool Jazz" groups. `WHERE` conditions always filter on the original column (pre-expansion) so that `where style contains 'X'` correctly filters which releases are included, then expands all their styles.
+
+AND combination filtering (`where style contains 'X' and style contains 'Y'`) finds releases that have both values — no special syntax needed since the query grammar already joins conditions with `and`.
+
 ## Consequences
 
 - Users can explore their collection with familiar SQL-like syntax without knowing the actual schema.
 - The DSL is intentionally limited to read-only queries (no INSERT/UPDATE/DELETE).
+- `group by` on `multi_text` fields always expands — there is no way to group by the raw combined string. This is intentional; the combined string is rarely useful for analysis.
+- Only the first `multi_text` field in `group by` is expanded; a second one would be treated as a raw column. This limitation is undocumented for now since multi-dimensional expansion creates a Cartesian product that is complex to interpret.
 - The `artists` entity is slightly approximate for `contains` filters (uses `LIKE '%value%'` against GROUP_CONCAT output rather than the 4-condition whole-value match).
 - Adding new queryable fields requires updating only `schema.ts`.

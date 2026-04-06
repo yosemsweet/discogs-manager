@@ -108,14 +108,39 @@ describe('buildQuery', () => {
       expect(sql).toContain('AVG(r.rating) AS avg_rating');
     });
 
-    test('group by generates GROUP BY clause', () => {
+    test('group by multi_text field expands using split CTE', () => {
       const { sql } = build('releases count(), style group by style');
-      expect(sql).toContain('GROUP BY r.styles');
+      expect(sql).toContain('WITH RECURSIVE style_split');
+      expect(sql).toContain('GROUP BY s.val');
+      expect(sql).not.toContain('GROUP BY r.styles');
+    });
+
+    test('group by multi_text uses s.val in SELECT', () => {
+      const { sql } = build('releases count(), style group by style');
+      expect(sql).toContain('s.val AS style');
+    });
+
+    test('group by non-multi_text field does not expand', () => {
+      const { sql } = build('releases count(), year group by year');
+      expect(sql).not.toContain('WITH RECURSIVE');
+      expect(sql).toContain('GROUP BY r.year');
     });
 
     test('group by date field uses date() expression', () => {
       const { sql } = build('releases count(), added group by added');
       expect(sql).toContain('GROUP BY date(r.addedAt)');
+    });
+
+    test('WHERE on expanded field still uses original column', () => {
+      const { sql, params } = build("releases count(), style where style contains 'Jazz' group by style");
+      // WHERE uses r.styles (pre-expansion filter), not s.val
+      expect(sql).toContain('r.styles');
+      expect(params).toContain('Jazz');
+    });
+
+    test('split CTE null guard added to WHERE', () => {
+      const { sql } = build('releases count(), style group by style');
+      expect(sql).toContain(`s.val IS NOT NULL`);
     });
   });
 

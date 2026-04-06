@@ -208,6 +208,60 @@ describe('executeQuery (integration)', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Multi-value field expansion
+  // ---------------------------------------------------------------------------
+  describe('multi-value field expansion', () => {
+    test('group by style expands into individual styles', async () => {
+      // Release 9 has styles "Funk, Psychedelic Rock" — should produce separate rows
+      const result = await run(db, 'releases count(), style group by style order by style');
+      const styles = result.rows.map(r => r.style as string);
+      // Individual styles must appear — not combined "Funk, Psychedelic Rock"
+      expect(styles).toContain('Funk');
+      expect(styles).toContain('Psychedelic Rock');
+      expect(styles).not.toContain('Funk, Psychedelic Rock');
+    });
+
+    test('group by genre expands into individual genres', async () => {
+      // Release 10 has genres "Jazz, Funk / Soul" — should contribute to both groups
+      const result = await run(db, 'releases count(), genre group by genre order by count desc');
+      const jazz = result.rows.find(r => r.genre === 'Jazz');
+      const funk = result.rows.find(r => r.genre === 'Funk / Soul');
+      expect(jazz).toBeDefined();
+      expect(funk).toBeDefined();
+      // Release 10 counted in both Jazz and Funk / Soul
+      expect(jazz!.count as number).toBeGreaterThanOrEqual(5);
+      expect(funk!.count as number).toBeGreaterThanOrEqual(4);
+    });
+
+    test('release with multiple styles counted in each style group', async () => {
+      // Release 2 (A Love Supreme): styles "Free Jazz, Hard Bop"
+      // Release 4 (Blue Train): styles "Hard Bop"
+      // Hard Bop should have count >= 2
+      const result = await run(db, 'releases count(), style group by style order by style');
+      const hardBop = result.rows.find(r => r.style === 'Hard Bop');
+      expect(hardBop).toBeDefined();
+      expect(hardBop!.count as number).toBeGreaterThanOrEqual(2);
+    });
+
+    test('WHERE on expanded field filters releases before expansion', async () => {
+      // Only Jazz releases, then count individual styles
+      const result = await run(db, "releases count(), style where genre contains 'Jazz' group by style order by count desc");
+      const styles = result.rows.map(r => r.style as string);
+      // Should not contain styles from non-Jazz releases (e.g. Classic Rock from Rock releases)
+      expect(styles).not.toContain('Classic Rock');
+    });
+
+    test('AND combination filter: releases with both styles', async () => {
+      // Release 6 (Exile): styles "Classic Rock, Blues Rock"
+      const result = await run(db, "releases title where style contains 'Classic Rock' and style contains 'Blues Rock'");
+      const titles = result.rows.map(r => r.title);
+      expect(titles).toContain('Exile on Main St.');
+      // Release 5 (Sticky Fingers): styles "Classic Rock" only — should NOT appear
+      expect(titles).not.toContain('Sticky Fingers');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // Limit
   // ---------------------------------------------------------------------------
   describe('limit', () => {

@@ -74,7 +74,8 @@ function buildOrderByClause(
   orderBy: OrderItem[],
   entity: string,
   selectItems: SelectItem[],
-  defaultOrderBy: typeof orderBy
+  defaultOrderBy: OrderItem[],
+  expandedField: string | null
 ): string {
   const items = orderBy.length > 0 ? orderBy : defaultOrderBy;
   if (items.length === 0) return '';
@@ -93,12 +94,27 @@ function buildOrderByClause(
         parts.push(`${AGG_SQL[item.aggregation]('')} ${dir}`);
       }
     } else {
-      const fieldDef = getField(entity, item.field);
-      parts.push(`${fieldDef.column} ${dir}`);
+      const col = (expandedField && item.field === expandedField) ? 's.val' : getField(entity, item.field).column;
+      parts.push(`${col} ${dir}`);
     }
   }
 
   return parts.length > 0 ? 'ORDER BY ' + parts.join(', ') : '';
+}
+
+// Generates a recursive CTE that splits a comma-separated column into individual (release_id, val) rows.
+function buildSplitCTE(rawColumn: string, fieldName: string): string {
+  return `WITH RECURSIVE ${fieldName}_split(release_id, val, rest) AS (
+  SELECT discogsId,
+    TRIM(CASE WHEN INSTR(${rawColumn}, ',') > 0 THEN SUBSTR(${rawColumn}, 1, INSTR(${rawColumn}, ',')-1) ELSE ${rawColumn} END),
+    CASE WHEN INSTR(${rawColumn}, ',') > 0 THEN SUBSTR(${rawColumn}, INSTR(${rawColumn}, ',')+1) ELSE NULL END
+  FROM releases
+  UNION ALL
+  SELECT release_id,
+    TRIM(CASE WHEN INSTR(rest, ',') > 0 THEN SUBSTR(rest, 1, INSTR(rest, ',')-1) ELSE rest END),
+    CASE WHEN INSTR(rest, ',') > 0 THEN SUBSTR(rest, INSTR(rest, ',')+1) ELSE NULL END
+  FROM ${fieldName}_split WHERE rest IS NOT NULL AND TRIM(rest) != ''
+)`;
 }
 
 function buildArtistsCTE(): string {
@@ -137,6 +153,29 @@ export function buildQuery(ast: QueryAST): BuiltQuery {
   const params: (string | number)[] = [];
   const isVirtual = !!entity.isVirtual;
 
+  // When a multi_text field appears in GROUP BY, expand it: one row per individual value.
+  // WHERE conditions always use the original column (pre-expansion) to filter which releases
+  // are included, then all individual values of those releases are counted.
+  let expandedField: string | null = null;
+  if (!isVirtual) {
+    for (const f of ast.groupBy) {
+      if (getField(ast.entity, f).type === 'multi_text') { expandedField = f; break; }
+    }
+  }
+
+  let splitCTE = '';
+  let fromClause = entity.fromClause;
+  if (expandedField) {
+    const rawCol = getField(ast.entity, expandedField).column.replace(/^\w+\./, '');
+    splitCTE = buildSplitCTE(rawCol, expandedField);
+    if (ast.entity === 'releases') {
+      fromClause = `${expandedField}_split s JOIN releases r ON r.discogsId = s.release_id`;
+    } else {
+      // tracks: add split as extra join
+      fromClause = `${entity.fromClause} JOIN ${expandedField}_split s ON s.release_id = r.discogsId`;
+    }
+  }
+
   // Determine effective select items
   const selectItems = ast.select.length > 0
     ? ast.select
@@ -147,26 +186,30 @@ export function buildQuery(ast: QueryAST): BuiltQuery {
   const columns: string[] = [];
 
   for (const item of selectItems) {
-    const { expr, alias } = buildSelectExpression(item, ast.entity);
+    let { expr, alias } = buildSelectExpression(item, ast.entity);
+    if (expandedField && item.type === 'field' && item.field === expandedField) {
+      expr = 's.val';
+    }
     selectParts.push(`${expr} AS ${alias}`);
     columns.push(alias);
   }
 
   const selectClause = 'SELECT ' + selectParts.join(', ');
 
-  // Build WHERE clause
+  // Build WHERE clause (always references original r.* columns, even for the expanded field)
   const whereClause = buildWhereClause(ast.where, ast.entity, isVirtual, params);
+  let effectiveWhere = whereClause;
+  if (expandedField) {
+    const nullGuard = `s.val IS NOT NULL AND TRIM(s.val) != ''`;
+    effectiveWhere = whereClause ? `${whereClause} AND ${nullGuard}` : `WHERE ${nullGuard}`;
+  }
 
   // Build GROUP BY clause
   let groupByClause = '';
   if (ast.groupBy.length > 0) {
-    const groupParts = ast.groupBy.map(f => {
-      try {
-        return getField(ast.entity, f).column;
-      } catch {
-        return f;
-      }
-    });
+    const groupParts = ast.groupBy.map(f =>
+      (expandedField && f === expandedField) ? 's.val' : getField(ast.entity, f).column
+    );
     groupByClause = 'GROUP BY ' + groupParts.join(', ');
   }
 
@@ -175,7 +218,8 @@ export function buildQuery(ast: QueryAST): BuiltQuery {
     ast.orderBy,
     ast.entity,
     selectItems,
-    entity.defaultOrderBy
+    entity.defaultOrderBy,
+    expandedField
   );
 
   // Build LIMIT clause
@@ -184,16 +228,17 @@ export function buildQuery(ast: QueryAST): BuiltQuery {
   // Assemble SQL
   let sql: string;
   if (isVirtual) {
-    // artists: CTE + query on artist_data
     const cte = buildArtistsCTE();
     const clauses = [selectClause, 'FROM artist_data', whereClause, groupByClause, orderByClause, limitClause]
-      .filter(Boolean)
-      .join('\n');
+      .filter(Boolean).join('\n');
     sql = `${cte}\n${clauses}`;
+  } else if (splitCTE) {
+    const clauses = [selectClause, `FROM ${fromClause}`, effectiveWhere, groupByClause, orderByClause, limitClause]
+      .filter(Boolean).join('\n');
+    sql = `${splitCTE}\n${clauses}`;
   } else {
     const clauses = [selectClause, `FROM ${entity.fromClause}`, whereClause, groupByClause, orderByClause, limitClause]
-      .filter(Boolean)
-      .join('\n');
+      .filter(Boolean).join('\n');
     sql = clauses;
   }
 
