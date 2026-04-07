@@ -177,6 +177,9 @@ export class DatabaseManager {
       if (currentVersion < 6) {
         this.migrateToVersion6();
       }
+      if (currentVersion < 7) {
+        this.migrateToVersion7();
+      }
     });
   }
 
@@ -923,6 +926,118 @@ export class DatabaseManager {
       console.error('Migration to version 6 failed:', err);
       throw err;
     }
+  }
+
+  /**
+   * Migrate database from version 6 to version 7
+   * Adds match_strategy_stats table for tracking per-strategy hit rates.
+   */
+  private migrateToVersion7(): void {
+    try {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS match_strategy_stats (
+          strategyIndex INTEGER PRIMARY KEY,
+          attempts INTEGER NOT NULL DEFAULT 0,
+          hits INTEGER NOT NULL DEFAULT 0
+        );
+      `);
+      this.setSchemaVersion(7);
+    } catch (err) {
+      console.error('Migration to version 7 failed:', err);
+      throw err;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Bulk track match cache — performance optimisation
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Load all cached track matches for a set of release IDs in one query.
+   * Returns a Map keyed by "releaseId|trackTitle" for O(1) per-track lookups.
+   */
+  getAllCachedTrackMatches(
+    releaseIds: number[]
+  ): Map<string, { soundcloudTrackId: string; confidence: number; matchedTitle: string; matchedPermalinkUrl: string | null }> {
+    const map = new Map<string, { soundcloudTrackId: string; confidence: number; matchedTitle: string; matchedPermalinkUrl: string | null }>();
+    if (releaseIds.length === 0) return map;
+    const placeholders = releaseIds.map(() => '?').join(',');
+    const rows = this.db.prepare(
+      `SELECT discogsReleaseId, discogsTrackTitle, soundcloudTrackId, confidence, matchedTitle, matchedPermalinkUrl
+       FROM track_matches WHERE discogsReleaseId IN (${placeholders})`
+    ).all(...releaseIds) as Array<{
+      discogsReleaseId: number;
+      discogsTrackTitle: string;
+      soundcloudTrackId: string;
+      confidence: number;
+      matchedTitle: string;
+      matchedPermalinkUrl: string | null;
+    }>;
+    for (const row of rows) {
+      map.set(`${row.discogsReleaseId}|${row.discogsTrackTitle}`, {
+        soundcloudTrackId: row.soundcloudTrackId,
+        confidence: row.confidence,
+        matchedTitle: row.matchedTitle,
+        matchedPermalinkUrl: row.matchedPermalinkUrl || null,
+      });
+    }
+    return map;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Negative-match cache — skip known-dead searches within TTL
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Returns true if this track has a 'pending' unmatched_tracks entry newer than ttlDays.
+   * Used to skip re-running fruitless SoundCloud searches on repeat runs.
+   */
+  isKnownUnmatchedTrack(releaseId: number, trackTitle: string, ttlDays: number): boolean {
+    const cutoffMs = Date.now() - ttlDays * 24 * 60 * 60 * 1000;
+    const cutoff = new Date(cutoffMs).toISOString();
+    const result = this.db.prepare(
+      `SELECT 1 FROM unmatched_tracks
+       WHERE discogsReleaseId = ? AND discogsTrackTitle = ? AND status = 'pending' AND createdAt > ?
+       LIMIT 1`
+    ).get(releaseId, trackTitle, cutoff);
+    return !!result;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Strategy stats — instrument which fallback strategies produce matches
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Record one attempt for the given strategy index, and optionally a hit.
+   * Uses INSERT OR REPLACE with upsert arithmetic to avoid read-modify-write races.
+   */
+  recordStrategyOutcome(strategyIndex: number, matched: boolean): void {
+    try {
+      this.db.prepare(`
+        INSERT INTO match_strategy_stats (strategyIndex, attempts, hits)
+        VALUES (?, 1, ?)
+        ON CONFLICT (strategyIndex) DO UPDATE SET
+          attempts = attempts + 1,
+          hits = hits + excluded.hits
+      `).run(strategyIndex, matched ? 1 : 0);
+    } catch {
+      // Stats writes are best-effort — never block a search on a stats failure.
+    }
+  }
+
+  /**
+   * Return per-strategy attempt and hit counts.
+   * Used by TrackSearchService to decide whether to prune low-hit strategies.
+   */
+  getStrategyHitRates(): Map<number, { attempts: number; hits: number }> {
+    const map = new Map<number, { attempts: number; hits: number }>();
+    const rows = this.db.prepare(
+      `SELECT strategyIndex, attempts, hits FROM match_strategy_stats`
+    ).all() as Array<{ strategyIndex: number; attempts: number; hits: number }>;
+    for (const row of rows) {
+      map.set(row.strategyIndex, { attempts: row.attempts, hits: row.hits });
+    }
+    return map;
   }
 
   // ---------------------------------------------------------------------------

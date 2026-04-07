@@ -67,7 +67,30 @@ Confidence threshold: **0.6**. Below this, the track is unmatched and saved to `
 ### [4] Cache
 **Files:** `src/services/track-search.ts` · `src/services/database.ts`
 
-Reads from `track_matches` table before any API call. Writes on every successful match (both per-track and playlist preflight). Cache key: `(releaseId, trackTitle)`.
+**Bulk pre-fetch:** At the start of `searchTracksForReleases`, a single SQL query loads all `track_matches` rows for the entire release set into an in-memory `Map<"releaseId|trackTitle", CachedMatch>`. Per-track lookups are O(1) in-memory hits — `getCachedTrackMatch` is never called in the hot loop.
+
+Cache key: `"releaseId|trackTitle"`. Writes on every successful match (both per-track and playlist preflight). The map is kept in sync as new matches are written during the run.
+
+### [5] Negative-Match Cache
+**Files:** `src/services/track-search.ts` · `src/services/database.ts`
+
+Tracks that previously failed to match are recorded in `unmatched_tracks` (status='pending'). Before running SoundCloud searches for a track, `isKnownUnmatchedTrack()` checks for a 'pending' row newer than 30 days. If found, the search is skipped entirely.
+
+Pass `--exhaustive` to bypass this cache and re-search all tracks regardless.
+
+### [6] Strategy Stats and Pruning
+**Files:** `src/services/track-search.ts` · `src/services/database.ts`
+
+Every strategy attempt is recorded in the `match_strategy_stats` table (`strategyIndex`, `attempts`, `hits`). Before running a strategy, the service checks if it should be pruned: a strategy with ≥ 100 observations and < 5% hit rate is skipped automatically.
+
+This activates organically once enough data accumulates. Pass `--exhaustive` to bypass pruning and run all strategies regardless.
+
+### [7] Bounded Concurrency
+**Files:** `src/services/track-search.ts` · `src/utils/concurrency.ts`
+
+The per-release processing loop in `searchTracksForReleases` runs with up to 8 releases in flight concurrently (configurable via `--concurrency`). Uses `runWithConcurrency()` from `src/utils/concurrency.ts` — a lightweight helper that preserves result order and caps in-flight work without adding dependencies.
+
+The existing SoundCloud rate-limit throttle (`throttleIfApproachingLimit`) continues to gate all requests at the API level, so concurrency beyond the daily budget is automatically capped.
 
 ---
 

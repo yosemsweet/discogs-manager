@@ -6,19 +6,38 @@ import { ProgressCallback, noopProgress } from '../utils/progress';
 import { QueryNormalizer } from '../utils/query-normalizer';
 import { Logger } from '../utils/logger';
 import { TrackMatcher, MatchCandidate, DiscogsTrackInfo } from './track-matcher';
+import { runWithConcurrency } from '../utils/concurrency';
 
 /**
- * Handles searching for tracks on SoundCloud given Discogs releases
- * Responsibilities:
- * - Fetch tracklists from database for each release
- * - Search SoundCloud API for each track with improved matching
- * - Normalize queries and validate results
- * - Manage rate limiting during searches
- * - Return mapping of found track IDs with confidence scores
+ * Handles searching for tracks on SoundCloud given Discogs releases.
+ *
+ * Performance features:
+ * - Bulk cache pre-fetch: all track_matches for the release set loaded in one SQL query
+ * - Bounded concurrency: up to `concurrency` releases processed in parallel (default 8)
+ * - Negative-match cache: tracks with recent 'pending' unmatched_tracks entries are
+ *   skipped automatically (bypass with exhaustive: true)
+ * - Strategy stats: records which fallback query strategy produced each match; prunes
+ *   strategies with ≥100 observations and <5% hit rate (bypass with exhaustive: true)
  */
+
+export interface TrackSearchOptions {
+  /** Max releases to process concurrently. Default: 8. */
+  concurrency?: number;
+  /**
+   * When true, bypass the negative-match cache and strategy pruning.
+   * Forces a full re-search even for tracks that previously failed to match.
+   */
+  exhaustive?: boolean;
+}
+
 export class TrackSearchService {
-    // Configuration for search behavior
-    private static readonly SEARCH_RESULT_LIMIT = 10; // Increased from 1 for better matching
+    private static readonly SEARCH_RESULT_LIMIT = 10;
+    /** TTL for negative-match cache entries (days). */
+    private static readonly NEGATIVE_CACHE_TTL_DAYS = 30;
+    /** Minimum strategy observations before pruning is considered. */
+    private static readonly STRATEGY_PRUNE_MIN_OBS = 100;
+    /** Hit-rate threshold below which a strategy is pruned. */
+    private static readonly STRATEGY_PRUNE_THRESHOLD = 0.05;
 
     constructor(
         private soundcloudClient: SoundCloudAPIClient,
@@ -27,137 +46,180 @@ export class TrackSearchService {
     ) { }
 
     /**
-     * Search for all tracks across multiple releases on SoundCloud
-     * Returns array of {trackId, discogsId} mappings for found tracks
-     *
-     * Improvements:
-     * - Uses QueryNormalizer for better query construction
-     * - Includes album context in search
-     * - Fetches multiple results for validation
-     * - Validates results with similarity checking
-     * - Persists unmatched tracks with near-miss candidates for later review
-     *
-     * @param releases - Releases to search tracks for
-     * @param onProgress - Progress callback
-     * @param playlistTitle - Title of the playlist being built (used to associate unmatched tracks)
+     * Search for all tracks across multiple releases on SoundCloud.
+     * Returns array of {trackId, discogsId, confidence} mappings for found tracks.
      */
     async searchTracksForReleases(
         releases: StoredRelease[],
         onProgress: ProgressCallback = noopProgress,
-        playlistTitle?: string
+        playlistTitle?: string,
+        options: TrackSearchOptions = {}
     ): Promise<Array<{ trackId: string; discogsId: number; confidence: number }>> {
-        const trackData: Array<{ trackId: string; discogsId: number; confidence: number }> = [];
-        let processedCount = 0;
-        let totalMatched = 0;
-        let totalSearched = 0;
+        const { concurrency = 8, exhaustive = false } = options;
 
-        for (const release of releases) {
-            // Throttle if approaching rate limit
-            if (this.rateLimitService) {
-                await this.soundcloudClient.throttleIfApproachingLimit(this.rateLimitService);
-            }
+        // --- Bulk cache pre-fetch: one SQL query instead of N per-track queries ---
+        const releaseIds = releases.map(r => r.discogsId);
+        const cacheMap = this.db.getAllCachedTrackMatches(releaseIds);
+        Logger.debug(`Bulk cache pre-fetch: ${cacheMap.size} cached matches for ${releaseIds.length} releases`);
 
-            onProgress({
-                stage: 'Fetching tracklist',
-                current: processedCount + 1,
-                total: releases.length,
-                message: `"${release.title}"`,
-            });
+        // --- Strategy pruning: load hit rates once, decide per-strategy ---
+        const strategyHitRates = exhaustive ? new Map<number, { attempts: number; hits: number }>() : this.db.getStrategyHitRates();
 
-            // Get tracks from database for this release
-            let tracks: any[] = [];
+        let completedReleases = 0;
+        const totalReleases = releases.length;
+
+        // --- Concurrent per-release processing ---
+        const releaseResults = await runWithConcurrency(releases, concurrency, async (release) => {
+            const perRelease: Array<{ trackId: string; discogsId: number; confidence: number }> = [];
+            let releaseMatched = 0;
+            let releaseSearched = 0;
+
             try {
-                tracks = await this.db.getTracksForRelease(release.discogsId);
-            } catch (error) {
-                Logger.warn(`Failed to fetch tracks for release ${release.discogsId}: ${error}`);
-                // Continue with other releases
-            }
+                if (this.rateLimitService) {
+                    await this.soundcloudClient.throttleIfApproachingLimit(this.rateLimitService);
+                }
 
-            if (tracks && tracks.length > 0) {
-                // Determine which tracks need per-track search
-                let tracksToSearch = tracks;
+                // Get tracks from database for this release
+                let tracks: any[] = [];
+                try {
+                    tracks = await this.db.getTracksForRelease(release.discogsId);
+                } catch (error) {
+                    Logger.warn(`Failed to fetch tracks for release ${release.discogsId}: ${error}`);
+                }
 
-                // Try playlist preflight for multi-track releases
-                if (tracks.length > 1) {
-                    Logger.debug(`Trying playlist preflight for "${release.title}" (${tracks.length} tracks)`);
-                    const preflightResult = await this.searchReleaseAsPlaylist(release, tracks);
-                    if (preflightResult) {
-                        // Add matched tracks from playlist
-                        for (const m of preflightResult.matched) {
-                            trackData.push({ ...m });
-                            totalMatched++;
+                if (tracks && tracks.length > 0) {
+                    let tracksToSearch = tracks;
+
+                    // Try playlist preflight for multi-track releases
+                    if (tracks.length > 1) {
+                        Logger.debug(`Trying playlist preflight for "${release.title}" (${tracks.length} tracks)`);
+                        const preflightResult = await this.searchReleaseAsPlaylist(release, tracks, cacheMap);
+                        if (preflightResult) {
+                            for (const m of preflightResult.matched) {
+                                perRelease.push({ ...m });
+                                releaseMatched++;
+                            }
+                            releaseSearched += tracks.length - preflightResult.unmatchedTracks.length;
+                            tracksToSearch = preflightResult.unmatchedTracks;
+
+                            if (tracksToSearch.length === 0) {
+                                completedReleases++;
+                                onProgress({
+                                    stage: 'Searching tracks',
+                                    current: completedReleases,
+                                    total: totalReleases,
+                                    message: `"${release.title}" — ${releaseMatched} matched via playlist preflight`,
+                                });
+                                return perRelease;
+                            }
                         }
-                        totalSearched += tracks.length - preflightResult.unmatchedTracks.length;
+                    }
 
-                        // Only search for unmatched tracks individually
-                        tracksToSearch = preflightResult.unmatchedTracks;
+                    // Per-track search for remaining tracks
+                    for (const track of tracksToSearch) {
+                        releaseSearched++;
 
-                        if (tracksToSearch.length === 0) {
-                            // All tracks resolved via playlist — skip per-track search
-                            processedCount++;
+                        if (this.rateLimitService) {
+                            await this.soundcloudClient.throttleIfApproachingLimit(this.rateLimitService);
+                        }
+
+                        // Check in-memory cache first (from bulk pre-fetch)
+                        const cacheKey = `${release.discogsId}|${track.title}`;
+                        const cached = cacheMap.get(cacheKey);
+                        if (cached) {
+                            Logger.debug(
+                                `  Cache hit (bulk): "${track.title}" → "${cached.matchedTitle}" ` +
+                                `(id: ${cached.soundcloudTrackId}, confidence: ${cached.confidence.toFixed(2)})`
+                            );
+                            perRelease.push({
+                                trackId: cached.soundcloudTrackId,
+                                discogsId: release.discogsId,
+                                confidence: cached.confidence,
+                            });
+                            releaseMatched++;
                             continue;
                         }
+
+                        // Negative-match cache check
+                        if (!exhaustive && this.db.isKnownUnmatchedTrack(
+                            release.discogsId,
+                            track.title,
+                            TrackSearchService.NEGATIVE_CACHE_TTL_DAYS
+                        )) {
+                            Logger.debug(
+                                `  Negative cache hit: "${track.title}" skipped (known unmatched within ${TrackSearchService.NEGATIVE_CACHE_TTL_DAYS}d TTL)`
+                            );
+                            continue;
+                        }
+
+                        const matchResult = await this.searchWithFallback(
+                            track,
+                            release,
+                            playlistTitle,
+                            strategyHitRates,
+                            exhaustive
+                        );
+
+                        if (matchResult) {
+                            perRelease.push({
+                                trackId: matchResult.trackId,
+                                discogsId: release.discogsId,
+                                confidence: matchResult.confidence,
+                            });
+                            releaseMatched++;
+                            // Keep cache map in sync so later releases sharing a track see the hit
+                            cacheMap.set(cacheKey, {
+                                soundcloudTrackId: matchResult.trackId,
+                                confidence: matchResult.confidence,
+                                matchedTitle: matchResult.matchedTitle,
+                                matchedPermalinkUrl: null,
+                            });
+                            Logger.debug(
+                                `Matched track: "${track.title}" → "${matchResult.matchedTitle}" ` +
+                                `(confidence: ${matchResult.confidence.toFixed(2)})`
+                            );
+                        } else {
+                            Logger.warn(`No confident match for "${track.title}" from "${release.title}"`);
+                        }
                     }
                 }
-
-                // Search for each individual track on SoundCloud
-                for (const track of tracksToSearch) {
-                    totalSearched++;
-
-                    if (this.rateLimitService) {
-                        await this.soundcloudClient.throttleIfApproachingLimit(this.rateLimitService);
-                    }
-
-                    // Try to find match using fallback strategies
-                    const matchResult = await this.searchWithFallback(track, release, playlistTitle);
-
-                    if (matchResult) {
-                        trackData.push({
-                            trackId: matchResult.trackId,
-                            discogsId: release.discogsId,
-                            confidence: matchResult.confidence,
-                        });
-                        totalMatched++;
-                        Logger.debug(
-                            `Matched track: "${track.title}" → "${matchResult.matchedTitle}" ` +
-                            `(confidence: ${matchResult.confidence.toFixed(2)})`
-                        );
-                    } else {
-                        Logger.warn(
-                            `No confident match for "${track.title}" from "${release.title}"`
-                        );
-                    }
-                }
+            } catch (error) {
+                Logger.warn(`Failed to process release "${release.title}": ${error}`);
             }
 
-            processedCount++;
-        }
+            completedReleases++;
+            onProgress({
+                stage: 'Searching tracks',
+                current: completedReleases,
+                total: totalReleases,
+                message: `"${release.title}" — ${releaseMatched}/${releaseSearched} matched`,
+            });
 
-        // Log final statistics
-        const matchRate = totalSearched > 0 ? ((totalMatched / totalSearched) * 100).toFixed(1) : '0';
-        Logger.info(
-            `Track matching complete: ${totalMatched}/${totalSearched} tracks matched (${matchRate}%)`
-        );
+            return perRelease;
+        });
+
+        const trackData = releaseResults.flat();
+
+        const totalMatched = trackData.length;
+        const matchRate = releases.length > 0 ? ((totalMatched / releases.length) * 100).toFixed(1) : '0';
+        Logger.info(`Track matching complete: ${totalMatched} tracks matched across ${releases.length} releases (${matchRate}% release coverage)`);
 
         return trackData;
     }
 
     /**
      * Attempt to resolve all tracks for a release by finding a matching SoundCloud playlist.
-     *
-     * Returns matched tracks and any unmatched tracks that need per-track fallback.
-     * Returns null if no confident playlist match is found.
+     * Checks the in-memory cache map for each playlist track before accepting a playlist match.
      */
     async searchReleaseAsPlaylist(
         release: StoredRelease,
-        tracks: any[]
+        tracks: any[],
+        cacheMap?: Map<string, { soundcloudTrackId: string; confidence: number; matchedTitle: string; matchedPermalinkUrl: string | null }>
     ): Promise<{
         matched: Array<{ trackId: string; discogsId: number; confidence: number }>;
         unmatchedTracks: any[];
     } | null> {
         try {
-            // Build the playlist search query: "Artist ReleaseTitle"
-            // Prefer the release-level artist (always populated) over per-track artists (often empty)
             const artistName = release.artists || tracks[0]?.artists || '';
             const query = `${artistName} ${release.title}`.trim();
 
@@ -175,7 +237,6 @@ export class TrackSearchService {
 
             Logger.debug(`Playlist preflight: ${playlists.length} result(s) for "${query}"`);
 
-            // Score playlists and find best match
             for (const p of playlists) {
                 const score = TrackMatcher.scorePlaylistMatch(release.title, artistName, p);
                 Logger.debug(
@@ -184,14 +245,10 @@ export class TrackSearchService {
                 );
             }
 
-            const bestMatch = TrackMatcher.findBestPlaylistMatch(
-                release.title,
-                artistName,
-                playlists
-            );
+            const bestMatch = TrackMatcher.findBestPlaylistMatch(release.title, artistName, playlists);
 
             if (!bestMatch) {
-                Logger.debug(`Playlist preflight: no candidate above threshold (${TrackMatcher.getConfidenceThreshold()})`);
+                Logger.debug(`Playlist preflight: no candidate above threshold`);
                 return null;
             }
 
@@ -200,7 +257,6 @@ export class TrackSearchService {
                 `(confidence: ${bestMatch.confidence.toFixed(3)})`
             );
 
-            // Fetch tracks from the matched playlist
             if (this.rateLimitService) {
                 await this.soundcloudClient.throttleIfApproachingLimit(this.rateLimitService);
             }
@@ -215,13 +271,7 @@ export class TrackSearchService {
             }
 
             Logger.debug(`Playlist preflight: fetched ${playlistTracks.length} track(s) from playlist`);
-            for (const pt of playlistTracks) {
-                Logger.debug(`  SC track: "${pt.title}" by ${pt.user?.username} (id: ${pt.id})`);
-            }
 
-            // Map playlist tracks to Discogs tracks.
-            // position = array index (0-based), used below to recover the original track
-            // object from the `tracks` array when building unmatchedTracks.
             const discogsTrackInfos: DiscogsTrackInfo[] = tracks.map((t: any, i: number) => ({
                 title: t.title,
                 artists: t.artists || '',
@@ -240,9 +290,10 @@ export class TrackSearchService {
                 confidence: bestMatch.confidence,
             }));
 
-            // Cache matched tracks so future runs don't re-search
+            // Cache matched tracks
             for (const m of mapping.matched) {
                 const trackId = (m.soundcloudTrack.id || (m.soundcloudTrack as any).track_id).toString();
+                const cacheKey = `${release.discogsId}|${m.discogsTrack.title}`;
                 try {
                     await this.db.saveCachedTrackMatch(
                         release.discogsId,
@@ -253,15 +304,21 @@ export class TrackSearchService {
                         m.soundcloudTrack.user?.username,
                         (m.soundcloudTrack as any).permalink_url || undefined
                     );
+                    // Keep in-memory map up to date
+                    if (cacheMap) {
+                        cacheMap.set(cacheKey, {
+                            soundcloudTrackId: trackId,
+                            confidence: bestMatch.confidence,
+                            matchedTitle: m.soundcloudTrack.title,
+                            matchedPermalinkUrl: (m.soundcloudTrack as any).permalink_url || null,
+                        });
+                    }
                 } catch (error) {
                     Logger.debug(`Failed to cache playlist match for "${m.discogsTrack.title}": ${error}`);
                 }
             }
 
-            // Find the original track objects for unmatched tracks
-            const unmatchedTracks = mapping.unmatched.map(um => {
-                return tracks[um.position];
-            });
+            const unmatchedTracks = mapping.unmatched.map(um => tracks[um.position]);
 
             Logger.info(
                 `Playlist preflight for "${release.title}": ${matched.length}/${tracks.length} tracks resolved`
@@ -275,61 +332,44 @@ export class TrackSearchService {
     }
 
     /**
-     * Search for a track using multiple fallback strategies with caching
+     * Search for a track using multiple fallback strategies with caching.
      *
-     * First checks cache, then tries queries in this order:
-     * 1. Track + Artist + Album (most specific)
-     * 2. Track + Artist (no album)
-     * 3. Track only (for well-known tracks)
-     * 4. Album + Artist (for compilations/albums as single tracks)
-     *
-     * Successful matches are cached to database for future lookups.
-     *
-     * @param track - Track to search for
-     * @param release - Release information for context
-     * @returns Match result with confidence, or null if no match found
+     * Strategy pruning: strategies with ≥STRATEGY_PRUNE_MIN_OBS observations and
+     * <STRATEGY_PRUNE_THRESHOLD hit rate are skipped (bypassed when exhaustive=true).
      */
     private async searchWithFallback(
         track: any,
         release: StoredRelease,
-        playlistTitle?: string
+        playlistTitle?: string,
+        strategyHitRates: Map<number, { attempts: number; hits: number }> = new Map(),
+        exhaustive: boolean = false
     ): Promise<{ trackId: string; matchedTitle: string; confidence: number } | null> {
-        // Use track-level artist if available, otherwise fall back to release-level artist
         const effectiveArtist = track.artists || release.artists || '';
         Logger.debug(`Per-track search: "${track.title}" by ${effectiveArtist || '(unknown)'} from "${release.title}"`);
 
-        // Check cache first
-        try {
-            const cachedMatch = await this.db.getCachedTrackMatch(release.discogsId, track.title);
-            if (cachedMatch) {
-                Logger.debug(
-                    `  Cache hit: "${track.title}" → "${cachedMatch.matchedTitle}" ` +
-                    `(id: ${cachedMatch.soundcloudTrackId}, confidence: ${cachedMatch.confidence.toFixed(2)})`
-                );
-                return {
-                    trackId: cachedMatch.soundcloudTrackId,
-                    matchedTitle: cachedMatch.matchedTitle,
-                    confidence: cachedMatch.confidence,
-                };
-            }
-            Logger.debug(`  No cache entry for "${track.title}"`);
-        } catch (error) {
-            Logger.debug(`  Cache lookup failed for "${track.title}": ${error}`);
-            // Continue with search
-        }
-
-        // Generate multiple query strategies
         const strategies = QueryNormalizer.buildQueryStrategies(
             track.title,
             effectiveArtist,
             release.title
         );
 
-        // Track last set of search results so we can mine near-misses after exhausting strategies
         let lastSearchResults: MatchCandidate[] = [];
+        let matchedStrategyIndex = -1;
 
-        // Try each strategy until we find a confident match
         for (let i = 0; i < strategies.length; i++) {
+            // Strategy pruning: skip if hit rate is below threshold (and enough observations)
+            if (!exhaustive) {
+                const stats = strategyHitRates.get(i);
+                if (
+                    stats &&
+                    stats.attempts >= TrackSearchService.STRATEGY_PRUNE_MIN_OBS &&
+                    stats.hits / stats.attempts < TrackSearchService.STRATEGY_PRUNE_THRESHOLD
+                ) {
+                    Logger.debug(`  Strategy ${i + 1} pruned (${stats.hits}/${stats.attempts} = ${(stats.hits / stats.attempts * 100).toFixed(1)}% < ${TrackSearchService.STRATEGY_PRUNE_THRESHOLD * 100}%)`);
+                    continue;
+                }
+            }
+
             const query = strategies[i];
 
             try {
@@ -348,7 +388,6 @@ export class TrackSearchService {
                 if (searchResults && searchResults.length > 0) {
                     lastSearchResults = searchResults as MatchCandidate[];
 
-                    // Use advanced fuzzy matching
                     const bestMatch = TrackMatcher.findBestMatch(
                         track.title,
                         effectiveArtist,
@@ -356,7 +395,6 @@ export class TrackSearchService {
                         lastSearchResults
                     );
 
-                    // Log top candidates for visibility
                     const allScored = TrackMatcher.findAllMatches(
                         track.title, effectiveArtist, track.duration || null,
                         lastSearchResults, 0.0
@@ -370,7 +408,18 @@ export class TrackSearchService {
                         );
                     }
 
+                    // Record attempt regardless of match outcome
+                    this.db.recordStrategyOutcome(i, !!bestMatch);
+                    // Update in-memory map so pruning decisions within this session
+                    // reflect the new data (best-effort — does not affect other sessions)
+                    const existing = strategyHitRates.get(i);
+                    strategyHitRates.set(i, {
+                        attempts: (existing?.attempts ?? 0) + 1,
+                        hits: (existing?.hits ?? 0) + (bestMatch ? 1 : 0),
+                    });
+
                     if (bestMatch) {
+                        matchedStrategyIndex = i;
                         Logger.debug(
                             `  ✓ Match found via strategy ${i + 1}: "${bestMatch.candidate.title}" by ${bestMatch.candidate.user?.username} ` +
                             `(${(bestMatch.confidence * 100).toFixed(0)}%)`
@@ -382,7 +431,6 @@ export class TrackSearchService {
                             confidence: bestMatch.confidence,
                         };
 
-                        // Save to cache for future lookups
                         try {
                             await this.db.saveCachedTrackMatch(
                                 release.discogsId,
@@ -395,7 +443,6 @@ export class TrackSearchService {
                             );
                         } catch (error) {
                             Logger.debug(`Failed to cache match for "${track.title}": ${error}`);
-                            // Don't fail the search just because caching failed
                         }
 
                         return result;
@@ -403,25 +450,20 @@ export class TrackSearchService {
                 }
             } catch (error) {
                 Logger.debug(`Search failed for query "${query}": ${error}`);
-                // Continue to next strategy
             }
         }
 
-        // All strategies exhausted — collect near-miss candidates for manual review
-        Logger.debug(
-            `  ✗ No match for "${track.title}" after ${strategies.length} strategies`
-        );
+        Logger.debug(`  ✗ No match for "${track.title}" after ${strategies.length} strategies`);
 
         if (playlistTitle) {
             try {
-                // Find near-miss candidates (lower threshold 0.3 to surface anything useful)
                 const nearMisses = TrackMatcher.findAllMatches(
                     track.title,
                     effectiveArtist,
                     track.duration || null,
                     lastSearchResults,
                     0.3
-                ).slice(0, 3); // Keep top-3
+                ).slice(0, 3);
 
                 const topCandidatesJson = nearMisses.length > 0
                     ? JSON.stringify(nearMisses.map(m => ({
@@ -446,7 +488,6 @@ export class TrackSearchService {
                 });
             } catch (error) {
                 Logger.debug(`Failed to save unmatched track "${track.title}": ${error}`);
-                // Don't fail the overall search
             }
         }
 

@@ -381,6 +381,10 @@ describe('TrackSearchService.searchReleaseAsPlaylist', () => {
       getCachedTrackMatch: jest.fn(),
       saveCachedTrackMatch: jest.fn(),
       saveUnmatchedTrack: jest.fn(),
+      getAllCachedTrackMatches: jest.fn().mockReturnValue(new Map()),
+      isKnownUnmatchedTrack: jest.fn().mockReturnValue(false),
+      getStrategyHitRates: jest.fn().mockReturnValue(new Map()),
+      recordStrategyOutcome: jest.fn(),
     };
 
     service = new TrackSearchService(mockSoundcloudClient, mockDb);
@@ -508,6 +512,10 @@ describe('TrackSearchService.searchTracksForReleases playlist preflight integrat
       getCachedTrackMatch: jest.fn().mockResolvedValue(null),
       saveCachedTrackMatch: jest.fn(),
       saveUnmatchedTrack: jest.fn(),
+      getAllCachedTrackMatches: jest.fn().mockReturnValue(new Map()),
+      isKnownUnmatchedTrack: jest.fn().mockReturnValue(false),
+      getStrategyHitRates: jest.fn().mockReturnValue(new Map()),
+      recordStrategyOutcome: jest.fn(),
     };
 
     service = new TrackSearchService(mockSoundcloudClient, mockDb);
@@ -826,6 +834,10 @@ describe('Approach 4 Success Criteria', () => {
       getCachedTrackMatch: jest.fn().mockResolvedValue(null),
       saveCachedTrackMatch: jest.fn(),
       saveUnmatchedTrack: jest.fn(),
+      getAllCachedTrackMatches: jest.fn().mockReturnValue(new Map()),
+      isKnownUnmatchedTrack: jest.fn().mockReturnValue(false),
+      getStrategyHitRates: jest.fn().mockReturnValue(new Map()),
+      recordStrategyOutcome: jest.fn(),
     };
 
     const service = new TrackSearchService(mockSoundcloudClient, mockDb as any);
@@ -865,6 +877,10 @@ describe('Approach 4 Success Criteria', () => {
       getCachedTrackMatch: jest.fn().mockResolvedValue(null),
       saveCachedTrackMatch: jest.fn(),
       saveUnmatchedTrack: jest.fn(),
+      getAllCachedTrackMatches: jest.fn().mockReturnValue(new Map()),
+      isKnownUnmatchedTrack: jest.fn().mockReturnValue(false),
+      getStrategyHitRates: jest.fn().mockReturnValue(new Map()),
+      recordStrategyOutcome: jest.fn(),
     };
 
     const service = new TrackSearchService(mockSoundcloudClient, mockDb as any);
@@ -904,6 +920,10 @@ describe('Approach 4 Success Criteria', () => {
       getCachedTrackMatch: jest.fn().mockResolvedValue(null),
       saveCachedTrackMatch: jest.fn(),
       saveUnmatchedTrack: jest.fn(),
+      getAllCachedTrackMatches: jest.fn().mockReturnValue(new Map()),
+      isKnownUnmatchedTrack: jest.fn().mockReturnValue(false),
+      getStrategyHitRates: jest.fn().mockReturnValue(new Map()),
+      recordStrategyOutcome: jest.fn(),
     };
 
     const service = new TrackSearchService(mockSoundcloudClient, mockDb as any);
@@ -975,6 +995,10 @@ describe('Artist resolution across release types', () => {
       getCachedTrackMatch: jest.fn().mockResolvedValue(null),
       saveCachedTrackMatch: jest.fn(),
       saveUnmatchedTrack: jest.fn(),
+      getAllCachedTrackMatches: jest.fn().mockReturnValue(new Map()),
+      isKnownUnmatchedTrack: jest.fn().mockReturnValue(false),
+      getStrategyHitRates: jest.fn().mockReturnValue(new Map()),
+      recordStrategyOutcome: jest.fn(),
     };
 
     service = new TrackSearchService(mockSoundcloudClient, mockDb);

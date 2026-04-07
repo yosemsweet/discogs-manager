@@ -38,6 +38,8 @@ function addPlaylistFilterOptions(cmd: Command): Command {
     .option('--acquired-before <date>', 'Only include releases acquired on or before this date (YYYY-MM-DD)')
     .option('--limit <n>', 'Maximum tracks to include (default: 500, max: 500)')
     .option('--from-csv <filepath>', 'Use a previously exported CSV to control which tracks are included')
+    .option('--concurrency <n>', 'Max releases searched in parallel (default: 8)')
+    .option('--exhaustive', 'Bypass negative-match cache and strategy pruning; re-search all tracks')
     .option('-v, --verbose', 'Show detailed matching/search debug output');
 }
 
@@ -288,12 +290,18 @@ async function runPlaylistAction(
       throw new Error('No releases match the criteria');
     }
 
+    const searchOptions = {
+      concurrency: options.concurrency ? parseInt(options.concurrency, 10) : undefined,
+      exhaustive: !!options.exhaustive,
+    };
+
     const playlist = await playlistService.createPlaylist(
       validated.title,
       releases,
       validated.description,
       progressCallback,
-      validated.limit
+      validated.limit,
+      searchOptions
     );
 
     const unmatchedCounts = await db.countUnmatchedTracks(validated.title);
