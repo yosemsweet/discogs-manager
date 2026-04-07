@@ -1,7 +1,7 @@
 import { SoundCloudAPIClient } from '../api/soundcloud';
 import { SoundCloudRateLimitService } from './soundcloud-rate-limit';
 import { DatabaseManager } from './database';
-import { TrackSearchService } from './track-search';
+import { TrackSearchService, TrackSearchOptions } from './track-search';
 import { PlaylistBatchManager, SOUNDCLOUD_PLAYLIST_TRACK_LIMIT } from './playlist-batch';
 import { StoredRelease } from '../types';
 import { ProgressCallback, noopProgress } from '../utils/progress';
@@ -38,7 +38,8 @@ export class PlaylistService {
     releases: StoredRelease[],
     description?: string,
     onProgress: ProgressCallback = noopProgress,
-    limit: number = SOUNDCLOUD_PLAYLIST_TRACK_LIMIT
+    limit: number = SOUNDCLOUD_PLAYLIST_TRACK_LIMIT,
+    searchOptions: TrackSearchOptions = {}
   ): Promise<{ id: string | number; trackCount: number; excludedCount: number }> {
     try {
       // Check rate limit before starting
@@ -55,13 +56,13 @@ export class PlaylistService {
 
       if (existingPlaylist && existingPlaylist.soundcloudId) {
         // Update existing playlist - only add new tracks
-        return await this.updatePlaylist(String(existingPlaylist.soundcloudId), title, releases, onProgress, limit);
+        return await this.updatePlaylist(String(existingPlaylist.soundcloudId), title, releases, onProgress, limit, searchOptions);
       }
 
       onProgress({ stage: 'Fetching tracklists', current: 0, total: releases.length, message: title });
 
       // Search for tracks on SoundCloud, associating unmatched tracks with this playlist title
-      const trackData = await this.trackSearchService.searchTracksForReleases(releases, onProgress, title);
+      const trackData = await this.trackSearchService.searchTracksForReleases(releases, onProgress, title, searchOptions);
 
       if (trackData.length === 0) {
         throw new Error('No tracks found in SoundCloud for any releases');
@@ -151,7 +152,8 @@ export class PlaylistService {
     title: string,
     releases: StoredRelease[],
     onProgress: ProgressCallback,
-    limit: number = SOUNDCLOUD_PLAYLIST_TRACK_LIMIT
+    limit: number = SOUNDCLOUD_PLAYLIST_TRACK_LIMIT,
+    searchOptions: TrackSearchOptions = {}
   ): Promise<{ id: string | number; trackCount: number; excludedCount: number }> {
     onProgress({ stage: 'Updating playlist', current: 0, total: releases.length, message: title });
 
@@ -180,7 +182,7 @@ export class PlaylistService {
     let newTrackData: Array<{ trackId: string; discogsId: number; confidence: number }> = [];
     if (newReleases.length > 0) {
       onProgress({ stage: 'Fetching tracklists', current: 0, total: newReleases.length, message: title });
-      newTrackData = await this.trackSearchService.searchTracksForReleases(newReleases, onProgress, title);
+      newTrackData = await this.trackSearchService.searchTracksForReleases(newReleases, onProgress, title, searchOptions);
     }
 
     // Get confidence scores for all existing + backfilled tracks from the DB
