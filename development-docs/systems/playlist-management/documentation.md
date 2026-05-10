@@ -21,6 +21,9 @@ npm run dev -- playlist export --title "My Jazz" --out my-jazz.csv   # export fi
 npm run dev -- playlist create --title "My Jazz" --from-csv my-jazz.csv
 npm run dev -- playlist update --title "My Jazz" --from-csv my-jazz.csv
 
+# List matched tracks for a playlist
+npm run dev -- playlist tracks list --title "My Jazz"
+
 # Review and resolve unmatched tracks
 npm run dev -- playlist tracks review --title "My Jazz"
 npm run dev -- playlist tracks unmatched --title "My Jazz"

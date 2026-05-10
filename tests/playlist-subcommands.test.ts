@@ -156,6 +156,10 @@ describe('playlist tracks subgroup', () => {
     expect(getTracks()).toBeDefined();
   });
 
+  test('playlist tracks has list subcommand', () => {
+    expect(getTracks().commands.map(c => c.name())).toContain('list');
+  });
+
   test('playlist tracks has review subcommand', () => {
     expect(getTracks().commands.map(c => c.name())).toContain('review');
   });
@@ -168,6 +172,11 @@ describe('playlist tracks subgroup', () => {
     expect(getTracks().commands.map(c => c.name())).toContain('reset');
   });
 
+  test('playlist tracks list has --title flag', () => {
+    const list = getTracks().commands.find(c => c.name() === 'list')!;
+    expect(list.options.some(o => o.long === '--title')).toBe(true);
+  });
+
   test('playlist tracks unmatched has --status and --json flags', () => {
     const unmatched = getTracks().commands.find(c => c.name() === 'unmatched')!;
     expect(unmatched.options.some(o => o.long === '--status')).toBe(true);
@@ -178,6 +187,70 @@ describe('playlist tracks subgroup', () => {
     const reset = getTracks().commands.find(c => c.name() === 'reset')!;
     expect(reset.options.some(o => o.long === '--status')).toBe(true);
     expect(reset.options.some(o => o.long === '--id')).toBe(true);
+  });
+
+  test('playlist tracks parent does NOT define --title (would shadow children)', () => {
+    expect(getTracks().options.some(o => o.long === '--title')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression: parent must not consume --title before child subcommands
+// ---------------------------------------------------------------------------
+
+describe('playlist tracks subcommands receive --title (regression for parent option shadowing)', () => {
+  function getTracks() {
+    return getPlaylist().commands.find(c => c.name() === 'tracks')!;
+  }
+
+  type CaseSpec = { name: string; argv: string[] };
+  const cases: CaseSpec[] = [
+    { name: 'list',      argv: ['list',      '-t', 'My Jazz'] },
+    { name: 'review',    argv: ['review',    '-t', 'My Jazz'] },
+    { name: 'unmatched', argv: ['unmatched', '-t', 'My Jazz'] },
+    { name: 'reset',     argv: ['reset',     '-t', 'My Jazz'] },
+    { name: 'excluded',  argv: ['excluded',  '-t', 'My Jazz'] },
+  ];
+
+  cases.forEach(({ name, argv }) => {
+    test(`playlist tracks ${name} receives --title via short flag`, async () => {
+      const tracks = getTracks();
+      const sub = tracks.commands.find(c => c.name() === name)!;
+      const captured: { title?: string } = {};
+      // Replace the action so we observe parsed options without DB / network calls.
+      (sub as unknown as { _actionHandler: ((args: unknown[]) => void) | null })
+        ._actionHandler = null;
+      sub.action((opts: { title: string }) => {
+        captured.title = opts.title;
+      });
+
+      const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit'); });
+      try {
+        await tracks.parseAsync(argv, { from: 'user' });
+      } catch { /* swallow process.exit thrown by sibling actions, if any */ }
+      exitSpy.mockRestore();
+
+      expect(captured.title).toBe('My Jazz');
+    });
+
+    test(`playlist tracks ${name} receives --title with multi-word value via --title=`, async () => {
+      const tracks = getTracks();
+      const sub = tracks.commands.find(c => c.name() === name)!;
+      const captured: { title?: string } = {};
+      (sub as unknown as { _actionHandler: ((args: unknown[]) => void) | null })
+        ._actionHandler = null;
+      sub.action((opts: { title: string }) => {
+        captured.title = opts.title;
+      });
+
+      const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit'); });
+      try {
+        await tracks.parseAsync([name, '--title=2026 summer Beat Street pickups'], { from: 'user' });
+      } catch { /* swallow */ }
+      exitSpy.mockRestore();
+
+      expect(captured.title).toBe('2026 summer Beat Street pickups');
+    });
   });
 });
 

@@ -337,19 +337,11 @@ async function runPlaylistAction(
 // `playlist tracks` subgroup
 // ---------------------------------------------------------------------------
 
-function createTracksCommand(
-  soundcloudClient: SoundCloudAPIClient | null,
-  db: DatabaseManager
-): Command {
-  const tracksCmd = new Command('tracks')
-    .description('Manage tracks in a playlist')
-    .option('-t, --title <title>', 'Playlist title')
+function createTracksListCommand(db: DatabaseManager): Command {
+  return new Command('list')
+    .description('List matched tracks for a playlist')
+    .requiredOption('-t, --title <title>', 'Playlist title')
     .action(async (options) => {
-      if (!options.title) {
-        tracksCmd.help();
-        return;
-      }
-      // List matched tracks for the playlist
       const playlist = await db.getPlaylistByTitle(options.title);
       if (!playlist) {
         console.error(chalk.red(`No playlist found with title "${options.title}".`));
@@ -369,7 +361,19 @@ function createTracksCommand(
       console.log();
       process.exit(0);
     });
+}
 
+function createTracksCommand(
+  soundcloudClient: SoundCloudAPIClient | null,
+  db: DatabaseManager
+): Command {
+  const tracksCmd = new Command('tracks')
+    .description('Manage tracks in a playlist')
+    .action(() => {
+      tracksCmd.help();
+    });
+
+  tracksCmd.addCommand(createTracksListCommand(db));
   tracksCmd.addCommand(createReviewCommand(soundcloudClient, db));
   tracksCmd.addCommand(createUnmatchedCommand(db));
   tracksCmd.addCommand(createResetCommand(db));
